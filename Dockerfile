@@ -1,5 +1,5 @@
 # Multi-stage build for Apache Fineract
-FROM gradle:7.5.1-jdk17 AS builder
+FROM gradle:8.10-jdk21 AS builder
 
 WORKDIR /opt/fineract
 
@@ -8,7 +8,7 @@ COPY . .
 # Build the application as a fat jar
 RUN ./gradlew clean bootJar -x test
 
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /opt/fineract
 

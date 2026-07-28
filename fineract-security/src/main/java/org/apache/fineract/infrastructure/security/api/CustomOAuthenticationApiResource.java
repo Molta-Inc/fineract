@@ -31,7 +31,9 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.fineract.infrastructure.core.config.MoltaJwtHelper;
+import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
+import org.apache.fineract.infrastructure.security.config.MoltaJwtHelper;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.serialization.ToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.constants.TwoFactorConstants;
@@ -118,6 +120,10 @@ public class CustomOAuthenticationApiResource {
 
             Map<String, Object> claims = new HashMap<>();
             claims.put("permissions", permissions);
+            FineractPlatformTenant tenant = ThreadLocalContextUtil.getTenant();
+            if (tenant != null) {
+                claims.put("tenant", tenant.getTenantIdentifier());
+            }
             String accessToken = moltaJwtHelper.createJwtForClaims(request.username, claims);
 
             final Collection<RoleData> roles = new ArrayList<>();
@@ -155,8 +161,7 @@ public class CustomOAuthenticationApiResource {
                         .setOrganisationalRole(organisationalRole).setRoles(roles).setPermissions(permissions).setUserId(principal.getId())
                         .setAuthenticated(true)
                         .setBearerToken(accessToken)
-                        .setTwoFactorAuthenticationRequired(isTwoFactorRequired)
-                        .setClients(returnClientList ? clientReadPlatformService.retrieveUserClients(userId) : null);
+                        .setTwoFactorAuthenticationRequired(isTwoFactorRequired);
 
             }
 

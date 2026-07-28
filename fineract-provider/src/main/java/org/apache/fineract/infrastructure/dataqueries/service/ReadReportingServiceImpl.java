@@ -209,6 +209,12 @@ public class ReadReportingServiceImpl implements ReadReportingService {
         final Map<String, String> paramFormatTypes = this.reportParameterTypeResolver.loadParamFormatTypes(name);
         String sql = getSql(name, type);
 
+        // Exclude customer GL accounts (gl_code starting with '2700-') from accounting reports
+        if ("Income Statement Table".equals(name) || "Trial Balance Table".equals(name)
+                || "Trial Balance Summary Report".equals(name) || "Balance Sheet Table".equals(name)) {
+            sql = "SELECT * FROM (" + sql + ") AS accounting_report WHERE glcode NOT LIKE '2700-CL-%'";
+        }
+
         // Step 1 — resolve server-controlled placeholders as plain strings (not user input)
         final AppUser currentUser = this.context.authenticatedUser();
         sql = this.genericDataService.replace(sql, "${currentUserHierarchy}", currentUser.getOffice().getHierarchy());

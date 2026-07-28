@@ -116,7 +116,7 @@ dependencies {
             'com.github.spotbugs:spotbugs-annotations',
             'io.swagger.core.v3:swagger-annotations-jakarta',
 
-            'com.google.cloud.sql:mysql-socket-factory-connector-j-8',
+            'com.google.cloud.sql:mysql-socket-factory-connector-j-8:1.4.4',
             'com.squareup.retrofit2:converter-gson',
             'com.sun.activation:jakarta.activation',
             'com.sun.mail:jakarta.mail',

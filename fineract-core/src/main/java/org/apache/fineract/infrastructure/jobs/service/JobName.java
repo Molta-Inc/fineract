@@ -62,9 +62,7 @@ public enum JobName {
     JOURNAL_ENTRY_AGGREGATION("Journal Entry Aggregation"), //
     WORKING_CAPITAL_LOAN_COB_JOB("Working Capital Loan COB"), //
     RETAINED_EARNING("Retained Earning Job"), //
-    ; //
-    SEND_MESSAGES_TO_SMS_GATEWAY_MOLTA("Send Messages to Molta SMS Gateway"), //
-    ;
+    SEND_MESSAGES_TO_SMS_GATEWAY_MOLTA("Send Messages to Molta SMS Gateway");
 
     private final String name;
 

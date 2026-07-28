@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.fineract.infrastructure.core.config;
+package org.apache.fineract.infrastructure.security.config;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTCreator;

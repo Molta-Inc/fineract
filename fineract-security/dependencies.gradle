@@ -79,6 +79,9 @@ dependencies {
     }
     implementation 'com.sun.mail:jakarta.mail'
 
+    // Auth0 JWT for custom OAuth token creation
+    implementation 'com.auth0:java-jwt:4.4.0'
+
     compileOnly 'com.github.spotbugs:spotbugs-annotations'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
