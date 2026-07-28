@@ -18,9 +18,10 @@
  */
 package org.apache.fineract.test.stepdef.loan;
 
+import static org.apache.fineract.client.feign.util.FeignCalls.fail;
+import static org.apache.fineract.client.feign.util.FeignCalls.ok;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.google.gson.Gson;
 import io.cucumber.datatable.DataTable;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
@@ -28,40 +29,50 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.client.feign.FineractFeignClient;
+import org.apache.fineract.client.feign.util.CallFailedRuntimeException;
+import org.apache.fineract.client.models.GetLoanRescheduleRequestResponse;
 import org.apache.fineract.client.models.PostCreateRescheduleLoansRequest;
 import org.apache.fineract.client.models.PostCreateRescheduleLoansResponse;
 import org.apache.fineract.client.models.PostLoansResponse;
 import org.apache.fineract.client.models.PostUpdateRescheduleLoansRequest;
-import org.apache.fineract.client.models.PostUpdateRescheduleLoansResponse;
-import org.apache.fineract.client.services.RescheduleLoansApi;
-import org.apache.fineract.client.util.JSON;
 import org.apache.fineract.test.data.LoanRescheduleErrorMessage;
-import org.apache.fineract.test.helper.ErrorHelper;
+import org.apache.fineract.test.data.codevalue.CodeNames;
+import org.apache.fineract.test.data.codevalue.CodeValueResolver;
+import org.apache.fineract.test.data.codevalue.DefaultCodeValue;
 import org.apache.fineract.test.helper.ErrorMessageHelper;
-import org.apache.fineract.test.helper.ErrorResponse;
+import org.apache.fineract.test.messaging.event.EventCheckHelper;
+import org.apache.fineract.test.messaging.store.EventStore;
 import org.apache.fineract.test.stepdef.AbstractStepDef;
 import org.apache.fineract.test.support.TestContextKey;
 import org.springframework.beans.factory.annotation.Autowired;
-import retrofit2.Response;
 
 @Slf4j
 public class LoanRescheduleStepDef extends AbstractStepDef {
 
-    private static final Gson GSON = new JSON().getGson();
     public static final String DATE_FORMAT_HU = "yyyy-MM-dd";
     public static final String DATE_FORMAT_EN = "dd MMMM yyyy";
     public static final DateTimeFormatter FORMATTER_HU = DateTimeFormatter.ofPattern(DATE_FORMAT_HU);
     public static final DateTimeFormatter FORMATTER_EN = DateTimeFormatter.ofPattern(DATE_FORMAT_EN);
 
     @Autowired
-    private RescheduleLoansApi rescheduleLoansApi;
+    private FineractFeignClient fineractClient;
+    @Autowired
+    private EventStore eventStore;
+    @Autowired
+    private EventCheckHelper eventCheckHelper;
+    @Autowired
+    private CodeValueResolver codeValueResolver;
 
     @When("Admin creates and approves Loan reschedule with the following data:")
     public void createAndApproveLoanReschedule(DataTable table) throws IOException {
-        Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
-        long loanId = loanResponse.body().getLoanId();
+        eventStore.reset();
+        PostLoansResponse loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
+        long loanId = loanResponse.getLoanId();
 
         List<List<String>> data = table.asLists();
         List<String> rescheduleData = data.get(1);
@@ -75,8 +86,7 @@ public class LoanRescheduleStepDef extends AbstractStepDef {
                 : Integer.valueOf(rescheduleData.get(4));
         Integer extraTerms = (rescheduleData.get(5) == null || "0".equals(rescheduleData.get(5))) ? null
                 : Integer.valueOf(rescheduleData.get(5));
-        BigDecimal newInterestRate = (rescheduleData.get(6) == null || "0".equals(rescheduleData.get(6))) ? null
-                : new BigDecimal(rescheduleData.get(6));
+        BigDecimal newInterestRate = (rescheduleData.get(6) == null) ? null : new BigDecimal(rescheduleData.get(6));
 
         PostCreateRescheduleLoansRequest request = new PostCreateRescheduleLoansRequest()//
                 .loanId(loanId)//
@@ -87,29 +97,31 @@ public class LoanRescheduleStepDef extends AbstractStepDef {
                 .graceOnInterest(graceOnInterest)//
                 .extraTerms(extraTerms)//
                 .newInterestRate(newInterestRate)//
-                .rescheduleReasonId(54L)//
+                .rescheduleReasonId(codeValueResolver.resolve(CodeNames.LOAN_RESCHEDULE_REASON.getValue(), DefaultCodeValue.TEST.getName()))//
                 .rescheduleReasonComment("")//
                 .dateFormat("dd MMMM yyyy")//
                 .locale("en");//
 
-        Response<PostCreateRescheduleLoansResponse> createResponse = rescheduleLoansApi.createLoanRescheduleRequest(request).execute();
-        ErrorHelper.checkSuccessfulApiCall(createResponse);
+        PostCreateRescheduleLoansResponse createResponse = ok(() -> fineractClient.rescheduleLoans().createRescheduleLoan(request));
 
-        Long scheduleId = createResponse.body().getResourceId();
+        Long scheduleId = createResponse.getResourceId();
         PostUpdateRescheduleLoansRequest approveRequest = new PostUpdateRescheduleLoansRequest()//
                 .approvedOnDate(submittedOnDate)//
                 .dateFormat("dd MMMM yyyy")//
                 .locale("en");//
 
-        Response<PostUpdateRescheduleLoansResponse> approveResponse = rescheduleLoansApi
-                .updateLoanRescheduleRequest(scheduleId, approveRequest, "approve").execute();
-        ErrorHelper.checkSuccessfulApiCall(approveResponse);
+        ok(() -> fineractClient.rescheduleLoans().updateRescheduleLoan(scheduleId, approveRequest,
+                Map.<String, Object>of("command", "approve")));
+
+        if (newInterestRate != null) {
+            eventCheckHelper.loanBalanceChangedEventCheck(loanId);
+        }
     }
 
     @Then("Loan reschedule with the following data results a {int} error and {string} error message")
     public void createLoanRescheduleError(int errorCodeExpected, String errorMessageType, DataTable table) throws IOException {
-        Response<PostLoansResponse> loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
-        long loanId = loanResponse.body().getLoanId();
+        PostLoansResponse loanResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
+        long loanId = loanResponse.getLoanId();
 
         List<List<String>> data = table.asLists();
         List<String> rescheduleData = data.get(1);
@@ -138,15 +150,15 @@ public class LoanRescheduleStepDef extends AbstractStepDef {
                 .dateFormat("dd MMMM yyyy")//
                 .locale("en");//
 
-        Response<PostCreateRescheduleLoansResponse> createResponse = rescheduleLoansApi.createLoanRescheduleRequest(request).execute();
-
         LoanRescheduleErrorMessage loanRescheduleErrorMessage = LoanRescheduleErrorMessage.valueOf(errorMessageType);
 
         LocalDate localDate = LocalDate.parse(rescheduleFromDate, FORMATTER_EN);
         String rescheduleFromDateFormatted = localDate.format(FORMATTER_HU);
         String errorMessageExpected = "";
         int expectedParameterCount = loanRescheduleErrorMessage.getExpectedParameterCount();
-        if (expectedParameterCount == 1) {
+        if (expectedParameterCount == 0) {
+            errorMessageExpected = loanRescheduleErrorMessage.getMessageTemplate();
+        } else if (expectedParameterCount == 1) {
             errorMessageExpected = loanRescheduleErrorMessage.getValue(loanId);
         } else if (expectedParameterCount == 2) {
             errorMessageExpected = loanRescheduleErrorMessage.getValue(rescheduleFromDateFormatted, loanId);
@@ -154,16 +166,62 @@ public class LoanRescheduleStepDef extends AbstractStepDef {
             throw new IllegalStateException("Parameter count in Error message does not met the criteria");
         }
 
-        String errorToString = createResponse.errorBody().string();
-        ErrorResponse errorResponse = GSON.fromJson(errorToString, ErrorResponse.class);
-        String errorMessageActual = errorResponse.getErrors().get(0).getDeveloperMessage();
-        int errorCodeActual = createResponse.code();
+        CallFailedRuntimeException exception = fail(() -> fineractClient.rescheduleLoans().createRescheduleLoan(request));
 
-        assertThat(errorCodeActual).as(ErrorMessageHelper.wrongErrorCode(errorCodeActual, errorCodeExpected)).isEqualTo(errorCodeExpected);
-        assertThat(errorMessageActual).as(ErrorMessageHelper.wrongErrorMessage(errorMessageActual, errorMessageExpected))
-                .isEqualTo(errorMessageExpected);
+        assertThat(exception.getStatus()).as(ErrorMessageHelper.wrongErrorCode(exception.getStatus(), errorCodeExpected))
+                .isEqualTo(errorCodeExpected);
+        assertThat(exception.getDeveloperMessage())
+                .as(ErrorMessageHelper.wrongErrorMessage(exception.getDeveloperMessage(), errorMessageExpected))
+                .contains(errorMessageExpected);
 
-        log.debug("ERROR CODE: {}", errorCodeActual);
-        log.debug("ERROR MESSAGE: {}", errorMessageActual);
+        log.debug("ERROR CODE: {}", exception.getStatus());
+        log.debug("ERROR MESSAGE: {}", exception.getDeveloperMessage());
+    }
+
+    @Then("Loan Reschedule tab has the following data:")
+    public void loanRescheduleTabCheck(DataTable table) {
+        PostLoansResponse loanCreateResponse = testContext().get(TestContextKey.LOAN_CREATE_RESPONSE);
+        long loanId = loanCreateResponse.getLoanId();
+        String resourceId = String.valueOf(loanId);
+
+        List<GetLoanRescheduleRequestResponse> loanRescheduleRequestResponses = ok(
+                () -> fineractClient.rescheduleLoans().retrieveAllRescheduleLoans("", loanId));
+        List<List<String>> data = table.asLists();
+        List<String> header = table.row(0);
+        checkLoanRescheduleTab(data, loanRescheduleRequestResponses, header, resourceId);
+    }
+
+    public void checkLoanRescheduleTab(List<List<String>> data, List<GetLoanRescheduleRequestResponse> reschedules, List<String> header,
+            String resourceId) {
+        assertThat(reschedules.size()).as(ErrorMessageHelper.nrOfLinesWrongInRescheduleTab(resourceId, reschedules.size(), data.size() - 1))
+                .isEqualTo(data.size() - 1);
+        checkLoanRescheduleTabRows(data, reschedules, header, resourceId);
+    }
+
+    public void checkLoanRescheduleTabRows(List<List<String>> data, List<GetLoanRescheduleRequestResponse> reschedules, List<String> header,
+            String resourceId) {
+        for (int i = 1; i < data.size(); i++) {
+            List<String> expectedValues = data.get(i);
+            GetLoanRescheduleRequestResponse reschedule = reschedules.get(i - 1);
+            List<String> actualValues = fetchValuesOfReschedule(header, reschedule);
+            assertThat(actualValues)
+                    .as(ErrorMessageHelper.wrongValueInLineInRescheduleTab(resourceId, i, List.of(actualValues), expectedValues))
+                    .isEqualTo(expectedValues);
+        }
+    }
+
+    private List<String> fetchValuesOfReschedule(List<String> header, GetLoanRescheduleRequestResponse r) {
+        List<String> actualValues = new ArrayList<>();
+        for (String headerName : header) {
+            switch (headerName) {
+                case "From Date" ->
+                    actualValues.add(r.getRescheduleFromDate() == null ? null : FORMATTER_EN.format(r.getRescheduleFromDate()));
+                case "Reason" ->
+                    actualValues.add(r.getRescheduleReasonCodeValue() == null ? null : r.getRescheduleReasonCodeValue().getName());
+                case "Status" -> actualValues.add(r.getStatusEnum() == null ? null : r.getStatusEnum().getValue());
+                default -> throw new IllegalStateException(String.format("Header name %s cannot be found", headerName));
+            }
+        }
+        return actualValues;
     }
 }

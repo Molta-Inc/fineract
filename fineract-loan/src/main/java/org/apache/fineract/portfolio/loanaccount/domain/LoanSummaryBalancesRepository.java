@@ -19,6 +19,7 @@
 package org.apache.fineract.portfolio.loanaccount.domain;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
@@ -26,11 +27,14 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.infrastructure.core.jpa.CriteriaQueryFactory;
-import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionBalance;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionBalanceWithLoanId;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Repository;
 
@@ -38,13 +42,21 @@ import org.springframework.stereotype.Repository;
 @RequiredArgsConstructor
 public class LoanSummaryBalancesRepository {
 
-    private final EntityManager entityManager;
+    @PersistenceContext
+    private EntityManager entityManager;
+
     private final CriteriaQueryFactory criteriaQueryFactory;
 
-    public Collection<LoanTransactionBalance> retrieveLoanSummaryBalancesByTransactionType(final Long loanId,
-            final List<Integer> transactionTypes) {
+    public Collection<LoanTransactionBalanceWithLoanId> retrieveLoanSummaryBalancesByTransactionType(final Long loanId,
+            final List<LoanTransactionType> transactionTypes) {
+        return retrieveLoanSummaryBalancesByTransactionType(Arrays.asList(loanId), transactionTypes).getOrDefault(loanId,
+                new ArrayList<>());
+    }
+
+    public Map<Long, List<LoanTransactionBalanceWithLoanId>> retrieveLoanSummaryBalancesByTransactionType(final List<Long> loanIds,
+            final List<LoanTransactionType> transactionTypes) {
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
-        CriteriaQuery<LoanTransactionBalance> query = cb.createQuery(LoanTransactionBalance.class);
+        CriteriaQuery<LoanTransactionBalanceWithLoanId> query = cb.createQuery(LoanTransactionBalanceWithLoanId.class);
 
         Root<LoanTransaction> root = query.from(LoanTransaction.class);
 
@@ -52,7 +64,7 @@ public class LoanSummaryBalancesRepository {
             Path<Loan> la = r.get("loan");
 
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(la.get("id"), loanId)); // Loan
+            predicates.add(la.get("id").in(loanIds)); // Loans
             predicates.add(r.get("typeOf").in(transactionTypes)); // Transaction Type
 
             return cb.and(predicates.toArray(new Predicate[0]));
@@ -60,12 +72,14 @@ public class LoanSummaryBalancesRepository {
 
         criteriaQueryFactory.applySpecificationToCriteria(root, spec, query);
 
-        query.groupBy(root.get("typeOf"), root.get("reversed"), root.get("manuallyAdjustedOrReversed"));
-        query.select(cb.construct(LoanTransactionBalance.class, root.get("typeOf"), root.get("reversed"),
-                root.get("manuallyAdjustedOrReversed"), cb.sum(root.get("amount"))));
+        query.groupBy(root.get("typeOf"), root.get("reversed"), root.get("manuallyAdjustedOrReversed"), root.get("loan").get("id"));
+        query.select(cb.construct(LoanTransactionBalanceWithLoanId.class, root.get("typeOf"), root.get("reversed"),
+                root.get("manuallyAdjustedOrReversed"), cb.sum(root.get("amount")), root.get("loan").get("id")));
 
-        TypedQuery<LoanTransactionBalance> queryToExecute = entityManager.createQuery(query);
-        return queryToExecute.getResultList();
+        TypedQuery<LoanTransactionBalanceWithLoanId> queryToExecute = entityManager.createQuery(query);
+        Map<Long, List<LoanTransactionBalanceWithLoanId>> collect = queryToExecute.getResultList().stream()
+                .collect(Collectors.groupingBy(LoanTransactionBalanceWithLoanId::getLoanId));
+        return collect;
     }
 
 }

@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.common.AccountingConstants.LoanProductAccountingParams;
@@ -49,6 +50,13 @@ import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.portfolio.calendar.service.CalendarUtils;
 import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
+import org.apache.fineract.portfolio.loanaccount.api.LoanTransactionApiConstants;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanBuyDownFeeCalculationType;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanBuyDownFeeIncomeType;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanBuyDownFeeStrategy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeCalculationType;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeStrategy;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanCapitalizedIncomeType;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanChargeOffBehaviour;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleTransactionProcessorFactory;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.AdvancedPaymentScheduleTransactionProcessor;
@@ -145,8 +153,13 @@ public final class LoanProductDataValidator {
             LoanProductAccountingParams.INCOME_FROM_GOODWILL_CREDIT_FEES.getValue(),
             LoanProductAccountingParams.INCOME_FROM_GOODWILL_CREDIT_PENALTY.getValue(),
             LoanProductAccountingParams.CHARGE_OFF_REASON_TO_EXPENSE_ACCOUNT_MAPPINGS.getValue(),
-            LoanProductAccountingParams.EXPENSE_GL_ACCOUNT_ID.getValue(),
-            LoanProductAccountingParams.CHARGE_OFF_REASON_CODE_VALUE_ID.getValue(), LoanProductConstants.USE_BORROWER_CYCLE_PARAMETER_NAME,
+            LoanProductAccountingParams.WRITE_OFF_REASON_TO_EXPENSE_ACCOUNT_MAPPINGS.getValue(),
+            LoanProductAccountingParams.WRITE_OFF_REASON_CODE_VALUE_ID.getValue(),
+            LoanProductAccountingParams.EXPENSE_GL_ACCOUNT_ID.getValue(), LoanProductAccountingParams.EXPENSE_GL_ACCOUNT_ID.getValue(),
+            LoanProductAccountingParams.CHARGE_OFF_REASON_CODE_VALUE_ID.getValue(),
+            LoanProductAccountingParams.INCOME_FROM_CAPITALIZATION.getValue(),
+            LoanProductAccountingParams.DEFERRED_INCOME_LIABILITY.getValue(), LoanProductAccountingParams.BUY_DOWN_EXPENSE.getValue(),
+            LoanProductAccountingParams.INCOME_FROM_BUY_DOWN.getValue(), LoanProductConstants.USE_BORROWER_CYCLE_PARAMETER_NAME,
             LoanProductConstants.PRINCIPAL_VARIATIONS_FOR_BORROWER_CYCLE_PARAMETER_NAME,
             LoanProductConstants.INTEREST_RATE_VARIATIONS_FOR_BORROWER_CYCLE_PARAMETER_NAME,
             LoanProductConstants.NUMBER_OF_REPAYMENT_VARIATIONS_FOR_BORROWER_CYCLE_PARAMETER_NAME, LoanProductConstants.SHORT_NAME,
@@ -185,7 +198,19 @@ public final class LoanProductDataValidator {
             LoanProductConstants.ENABLE_INSTALLMENT_LEVEL_DELINQUENCY, LoanProductConstants.LOAN_SCHEDULE_TYPE,
             LoanProductConstants.LOAN_SCHEDULE_PROCESSING_TYPE, LoanProductConstants.FIXED_LENGTH,
             LoanProductConstants.ENABLE_ACCRUAL_ACTIVITY_POSTING, LoanProductConstants.SUPPORTED_INTEREST_REFUND_TYPES,
-            LoanProductConstants.CHARGE_OFF_BEHAVIOUR, LoanProductConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE));
+            LoanProductConstants.CHARGE_OFF_BEHAVIOUR, LoanProductConstants.INTEREST_RECOGNITION_ON_DISBURSEMENT_DATE,
+            LoanProductConstants.DAYS_IN_YEAR_CUSTOM_STRATEGY_TYPE_PARAMETER_NAME,
+            LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME,
+            LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME,
+            LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME, LoanProductConstants.CAPITALIZED_INCOME_TYPE_PARAM_NAME,
+            LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, LoanProductConstants.BUY_DOWN_FEE_CALCULATION_TYPE_PARAM_NAME,
+            LoanProductConstants.BUY_DOWN_FEE_STRATEGY_PARAM_NAME, LoanProductConstants.BUY_DOWN_FEE_INCOME_TYPE_PARAM_NAME,
+            LoanProductAccountingParams.BUY_DOWN_EXPENSE.getValue(), LoanProductAccountingParams.INCOME_FROM_BUY_DOWN.getValue(),
+            LoanProductConstants.MERCHANT_BUY_DOWN_FEE_PARAM_NAME,
+            LoanProductAccountingParams.CAPITALIZED_INCOME_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS.getValue(), //
+            LoanProductAccountingParams.BUYDOWN_FEE_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS.getValue(), //
+            LoanProductConstants.ALLOW_FULL_TERM_FOR_TRANCHE_PARAM_NAME //
+    ));
 
     private static final String[] SUPPORTED_LOAN_CONFIGURABLE_ATTRIBUTES = { LoanProductConstants.amortizationTypeParamName,
             LoanProductConstants.interestTypeParamName, LoanProductConstants.transactionProcessingStrategyCodeParamName,
@@ -727,7 +752,11 @@ public final class LoanProductDataValidator {
             validatePaymentChannelFundSourceMappings(baseDataValidator, element);
             validateChargeToIncomeAccountMappings(baseDataValidator, element);
             validateChargeOffToExpenseMappings(baseDataValidator, element);
-
+            validateWriteOffToExpenseMappings(baseDataValidator, element);
+            validateClassificationToIncomeMappings(baseDataValidator, element,
+                    LoanProductAccountingParams.BUYDOWN_FEE_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS);
+            validateClassificationToIncomeMappings(baseDataValidator, element,
+                    LoanProductAccountingParams.CAPITALIZED_INCOME_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS);
         }
 
         if (AccountingValidations.isAccrualBasedAccounting(accountingRuleType)) {
@@ -770,7 +799,7 @@ public final class LoanProductDataValidator {
             }
         }
 
-        validateMultiDisburseLoanData(baseDataValidator, element);
+        validateMultiDisburseLoanData(baseDataValidator, element, null);
 
         validateLoanConfigurableAttributes(baseDataValidator, element);
 
@@ -875,6 +904,10 @@ public final class LoanProductDataValidator {
                     "supported.only.for.progressive.loan.charge.off.behaviour",
                     "Charge off behaviour is only supported for Progressive loans");
         }
+
+        validateIncomeCapitalization(transactionProcessingStrategyCode, element, baseDataValidator, accountingRuleType);
+
+        validateBuyDownFee(transactionProcessingStrategyCode, element, baseDataValidator, accountingRuleType);
 
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
@@ -994,7 +1027,8 @@ public final class LoanProductDataValidator {
         }
     }
 
-    private void validateMultiDisburseLoanData(final DataValidatorBuilder baseDataValidator, final JsonElement element) {
+    private void validateMultiDisburseLoanData(final DataValidatorBuilder baseDataValidator, final JsonElement element,
+            final LoanProduct loanProduct) {
         Boolean multiDisburseLoan = false;
         if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME, element)) {
             multiDisburseLoan = this.fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME,
@@ -1025,12 +1059,64 @@ public final class LoanProductDataValidator {
                     .integerGreaterThanZero();
 
             final Integer interestType = this.fromApiJsonHelper.extractIntegerNamed(INTEREST_TYPE, element, Locale.getDefault());
-            baseDataValidator.reset().parameter(INTEREST_TYPE).value(interestType).ignoreIfNull()
-                    .integerSameAsNumber(InterestMethod.DECLINING_BALANCE.getValue());
+
+            baseDataValidator.reset().parameter(INTEREST_TYPE).value(interestType).ignoreIfNull().inMinMaxRange(0, 1);
+        }
+
+        // Determine effective values for allowFullTermForTranche validation
+        // For updates, fall back to existing product values if not in request
+        Boolean effectiveMultiDisburseLoan = multiDisburseLoan;
+        if (!this.fromApiJsonHelper.parameterExists(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME, element)
+                && loanProduct != null) {
+            effectiveMultiDisburseLoan = loanProduct.isMultiDisburseLoan();
+        }
+
+        String effectiveLoanScheduleType = LoanScheduleType.CUMULATIVE.toString();
+        if (fromApiJsonHelper.parameterExists(LoanProductConstants.LOAN_SCHEDULE_TYPE, element)) {
+            effectiveLoanScheduleType = fromApiJsonHelper.extractStringNamed(LoanProductConstants.LOAN_SCHEDULE_TYPE, element);
+        } else if (loanProduct != null) {
+            effectiveLoanScheduleType = loanProduct.getLoanProductRelatedDetail().getLoanScheduleType().toString();
+        }
+
+        Boolean effectiveAllowFullTermForTranche = false;
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.ALLOW_FULL_TERM_FOR_TRANCHE_PARAM_NAME, element)) {
+            effectiveAllowFullTermForTranche = this.fromApiJsonHelper
+                    .extractBooleanNamed(LoanProductConstants.ALLOW_FULL_TERM_FOR_TRANCHE_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.ALLOW_FULL_TERM_FOR_TRANCHE_PARAM_NAME)
+                    .value(effectiveAllowFullTermForTranche).ignoreIfNull().validateForBooleanValue();
+        } else if (loanProduct != null && loanProduct.getLoanProductTrancheDetails() != null) {
+            effectiveAllowFullTermForTranche = loanProduct.getLoanProductTrancheDetails().isAllowFullTermForTranche();
+        }
+
+        // Validate: allowFullTermForTranche requires multi-disburse and PROGRESSIVE
+        // schedule
+        if (Boolean.TRUE.equals(effectiveAllowFullTermForTranche)) {
+            if (!Boolean.TRUE.equals(effectiveMultiDisburseLoan)) {
+                baseDataValidator.reset().parameter(LoanProductConstants.ALLOW_FULL_TERM_FOR_TRANCHE_PARAM_NAME).failWithCode(
+                        "requires.multi.disburse.loan", "Full term tranche can only be enabled for multi-disbursement loan products");
+            }
+            if (!LoanScheduleType.PROGRESSIVE.toString().equals(effectiveLoanScheduleType)) {
+                baseDataValidator.reset().parameter(LoanProductConstants.ALLOW_FULL_TERM_FOR_TRANCHE_PARAM_NAME).failWithCode(
+                        "requires.progressive.schedule.type", "Full term tranche can only be enabled for PROGRESSIVE loan schedule type");
+            }
         }
 
         final String overAppliedCalculationType = this.fromApiJsonHelper.extractStringNamed(OVER_APPLIED_CALCULATION_TYPE, element);
         baseDataValidator.reset().parameter(OVER_APPLIED_CALCULATION_TYPE).value(overAppliedCalculationType).notExceedingLengthOf(10);
+    }
+
+    private boolean isProgressive(JsonElement element, LoanProduct loanProduct) {
+        String processorCode = null;
+        if (loanProduct != null) {
+            processorCode = loanProduct.getTransactionProcessingStrategyCode();
+        }
+        final String transactionProcessingStrategyCode = this.fromApiJsonHelper.extractStringNamed(TRANSACTION_PROCESSING_STRATEGY_CODE,
+                element);
+        if (transactionProcessingStrategyCode != null) {
+            processorCode = loanRepaymentScheduleTransactionProcessorFactory.determineProcessor(transactionProcessingStrategyCode)
+                    .getCode();
+        }
+        return "advanced-payment-allocation-strategy".equals(processorCode);
     }
 
     private void validateInterestRecalculationParams(final JsonElement element, final DataValidatorBuilder baseDataValidator,
@@ -1226,6 +1312,22 @@ public final class LoanProductDataValidator {
         baseDataValidator.reset().parameter(LoanProductConstants.preClosureInterestCalculationStrategyParamName)
                 .value(preCloseInterestCalculationStrategy).ignoreIfNull().inMinMaxRange(
                         LoanPreCloseInterestCalculationStrategy.getMinValue(), LoanPreCloseInterestCalculationStrategy.getMaxValue());
+
+        String loanScheduleType = LoanScheduleType.CUMULATIVE.toString();
+        if (fromApiJsonHelper.parameterExists(LoanProductConstants.LOAN_SCHEDULE_TYPE, element)) {
+            loanScheduleType = fromApiJsonHelper.extractStringNamed(LoanProductConstants.LOAN_SCHEDULE_TYPE, element);
+        }
+        if (LoanScheduleType.PROGRESSIVE.equals(LoanScheduleType.valueOf(loanScheduleType))
+                && preCloseInterestCalculationStrategy != null) {
+            LoanPreCloseInterestCalculationStrategy preCloseStrategy = LoanPreCloseInterestCalculationStrategy
+                    .fromInt(preCloseInterestCalculationStrategy);
+            if (preCloseStrategy.calculateTillRestFrequencyEnabled() && !frequencyType.isSameAsRepayment() && !frequencyType.isDaily()) {
+                baseDataValidator.reset().failWithCodeNoParameterAddedToErrorCode(
+                        "when.preclose.strategy.is.till.rest.frequency.then.frequency.type.is.daily.or.same.as.repayment",
+                        "When the pre-close interest calculation strategy is set to `Till Rest Frequency Date` "
+                                + "the frequency of outstanding principal calculation must be `Daily` or `Same as repayment period`.");
+            }
+        }
     }
 
     public void validateForUpdate(final JsonCommand command, final LoanProduct loanProduct) {
@@ -1417,7 +1519,7 @@ public final class LoanProductDataValidator {
                     .isOneOfTheseValues(1, 360, 364, 365);
         }
 
-        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.DAYS_IN_YEAR_TYPE_PARAMETER_NAME, element)) {
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.DAYS_IN_MONTH_TYPE_PARAMETER_NAME, element)) {
             final Integer daysInMonthType = this.fromApiJsonHelper
                     .extractIntegerNamed(LoanProductConstants.DAYS_IN_MONTH_TYPE_PARAMETER_NAME, element, Locale.getDefault());
             baseDataValidator.reset().parameter(LoanProductConstants.DAYS_IN_MONTH_TYPE_PARAMETER_NAME).value(daysInMonthType).notNull()
@@ -1703,8 +1805,8 @@ public final class LoanProductDataValidator {
         }
         if (actualValue) {
             Integer ruleType = accountingRuleType;
-            if (ruleType == null) {
-                ruleType = loanProduct.getAccountingRule();
+            if (ruleType == null && loanProduct.getAccountingRule() != null) {
+                ruleType = loanProduct.getAccountingRule().getValue();
             }
             if (!AccountingValidations.isAccrualBasedAccounting(ruleType)) {
                 baseDataValidator.reset().parameter(LoanProductConstants.ENABLE_ACCRUAL_ACTIVITY_POSTING)
@@ -1819,6 +1921,10 @@ public final class LoanProductDataValidator {
         validatePaymentChannelFundSourceMappings(baseDataValidator, element);
         validateChargeToIncomeAccountMappings(baseDataValidator, element);
         validateChargeOffToExpenseMappings(baseDataValidator, element);
+        validateClassificationToIncomeMappings(baseDataValidator, element,
+                LoanProductAccountingParams.BUYDOWN_FEE_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS);
+        validateClassificationToIncomeMappings(baseDataValidator, element,
+                LoanProductAccountingParams.CAPITALIZED_INCOME_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS);
 
         validateMinMaxConstraints(element, baseDataValidator, loanProduct);
 
@@ -1832,7 +1938,7 @@ public final class LoanProductDataValidator {
             }
         }
 
-        validateMultiDisburseLoanData(baseDataValidator, element);
+        validateMultiDisburseLoanData(baseDataValidator, element, loanProduct);
 
         // validateLoanConfigurableAttributes(baseDataValidator,element);
 
@@ -1921,6 +2027,11 @@ public final class LoanProductDataValidator {
 
         validateRepaymentPeriodWithGraceSettings(numberOfRepayments, graceOnPrincipalPayment, graceOnInterestPayment,
                 graceOnInterestCharged, recurringMoratoriumOnPrincipalPeriods, baseDataValidator);
+
+        validateIncomeCapitalization(transactionProcessingStrategyCode, element, baseDataValidator, accountingRuleType);
+
+        validateBuyDownFee(transactionProcessingStrategyCode, element, baseDataValidator, accountingRuleType);
+
         throwExceptionIfValidationWarningsExist(dataValidationErrors);
     }
 
@@ -1994,54 +2105,140 @@ public final class LoanProductDataValidator {
 
     private void validateChargeOffToExpenseMappings(final DataValidatorBuilder baseDataValidator, final JsonElement element) {
         String parameterName = LoanProductAccountingParams.CHARGE_OFF_REASON_TO_EXPENSE_ACCOUNT_MAPPINGS.getValue();
+        LoanProductAccountingParams reasonCodeValueId = LoanProductAccountingParams.CHARGE_OFF_REASON_CODE_VALUE_ID;
+        String failCode = "chargeOffReason";
+        validateAdditionalAccountMappings(baseDataValidator, element, parameterName, reasonCodeValueId, failCode,
+                productToGLAccountMappingHelper::validateChargeOffMappingsInDatabase);
+    }
 
+    private void validateWriteOffToExpenseMappings(final DataValidatorBuilder baseDataValidator, final JsonElement element) {
+        String parameterName = LoanProductAccountingParams.WRITE_OFF_REASON_TO_EXPENSE_ACCOUNT_MAPPINGS.getValue();
+        LoanProductAccountingParams reasonCodeValueId = LoanProductAccountingParams.WRITE_OFF_REASON_CODE_VALUE_ID;
+        String failCode = "writeOffReason";
+        validateAdditionalAccountMappings(baseDataValidator, element, parameterName, reasonCodeValueId, failCode,
+                productToGLAccountMappingHelper::validateWriteOffMappingsInDatabase);
+    }
+
+    private void validateAdditionalAccountMappings(DataValidatorBuilder baseDataValidator, JsonElement element, String parameterName,
+            LoanProductAccountingParams reasonCodeValueIdParam, String failCode,
+            BiConsumer<List<ApiParameterError>, List<JsonObject>> additionalMappingValidator) {
         if (this.fromApiJsonHelper.parameterExists(parameterName, element)) {
-            final JsonArray chargeOffToExpenseMappingArray = this.fromApiJsonHelper.extractJsonArrayNamed(parameterName, element);
-            if (chargeOffToExpenseMappingArray != null && chargeOffToExpenseMappingArray.size() > 0) {
-                Map<Long, Set<Long>> chargeOffReasonToAccounts = new HashMap<>();
-                List<JsonObject> processedMappings = new ArrayList<>(); // Collect processed mappings for the new method
+            final JsonArray reasonToExpenseMappingArray = this.fromApiJsonHelper.extractJsonArrayNamed(parameterName, element);
+            if (reasonToExpenseMappingArray != null && !reasonToExpenseMappingArray.isEmpty()) {
+                Map<Long, Set<Long>> reasonToAccounts = new HashMap<>();
+                List<JsonObject> processedMappings = new ArrayList<>(); // Collect processed mappings
+                                                                        // for the new method
 
                 int i = 0;
                 do {
-                    final JsonObject jsonObject = chargeOffToExpenseMappingArray.get(i).getAsJsonObject();
-                    final Long expenseGlAccountId = this.fromApiJsonHelper
-                            .extractLongNamed(LoanProductAccountingParams.EXPENSE_GL_ACCOUNT_ID.getValue(), jsonObject);
-                    final Long chargeOffReasonCodeValueId = this.fromApiJsonHelper
-                            .extractLongNamed(LoanProductAccountingParams.CHARGE_OFF_REASON_CODE_VALUE_ID.getValue(), jsonObject);
+                    final JsonObject jsonObject = reasonToExpenseMappingArray.get(i).getAsJsonObject();
+
+                    final String expenseGlAccountIdString = this.fromApiJsonHelper
+                            .extractStringNamed(LoanProductAccountingParams.EXPENSE_GL_ACCOUNT_ID.getValue(), jsonObject);
+                    final String reasonCodeValueIdString = this.fromApiJsonHelper.extractStringNamed(reasonCodeValueIdParam.getValue(),
+                            jsonObject);
 
                     // Validate parameters locally
                     baseDataValidator.reset()
                             .parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET + DOT
                                     + LoanProductAccountingParams.EXPENSE_GL_ACCOUNT_ID.getValue())
-                            .value(expenseGlAccountId).notNull().integerGreaterThanZero();
-                    baseDataValidator.reset()
-                            .parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET + DOT
-                                    + LoanProductAccountingParams.CHARGE_OFF_REASON_CODE_VALUE_ID.getValue())
-                            .value(chargeOffReasonCodeValueId).notNull().integerGreaterThanZero();
+                            .value(expenseGlAccountIdString).notNull().longGreaterThanZero();
+                    baseDataValidator.reset().parameter(
+                            parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET + DOT + reasonCodeValueIdParam.getValue())
+                            .value(reasonCodeValueIdString).notNull().longGreaterThanZero();
 
-                    // Handle duplicate charge-off reason and GL Account validation
-                    chargeOffReasonToAccounts.putIfAbsent(chargeOffReasonCodeValueId, new HashSet<>());
-                    Set<Long> associatedAccounts = chargeOffReasonToAccounts.get(chargeOffReasonCodeValueId);
+                    final Long reasonCodeValueId = Long.valueOf(reasonCodeValueIdString);
+                    final Long expenseGlAccountId = Long.valueOf(expenseGlAccountIdString);
+                    // Handle duplicate reason and GL Account validation
+                    reasonToAccounts.putIfAbsent(reasonCodeValueId, new HashSet<>());
+                    Set<Long> associatedAccounts = reasonToAccounts.get(reasonCodeValueId);
 
                     if (associatedAccounts.contains(expenseGlAccountId)) {
                         baseDataValidator.reset().parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET)
-                                .failWithCode("duplicate.chargeOffReason.and.glAccount");
+                                .failWithCode("duplicate." + failCode + ".and.glAccount");
                     }
                     associatedAccounts.add(expenseGlAccountId);
 
                     if (associatedAccounts.size() > 1) {
                         baseDataValidator.reset().parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET)
-                                .failWithCode("multiple.glAccounts.for.chargeOffReason");
+                                .failWithCode("multiple.glAccounts.for." + failCode);
                     }
 
                     // Collect mapping for additional validations
                     processedMappings.add(jsonObject);
 
                     i++;
-                } while (i < chargeOffToExpenseMappingArray.size());
+                } while (i < reasonToExpenseMappingArray.size());
 
                 // Call the new validation method for additional checks
-                productToGLAccountMappingHelper.validateChargeOffMappingsInDatabase(processedMappings);
+                final List<ApiParameterError> validationErrors = new ArrayList<>();
+                productToGLAccountMappingHelper.validateGLAccountInDatabase(validationErrors, processedMappings);
+                if (additionalMappingValidator != null) {
+                    additionalMappingValidator.accept(validationErrors, processedMappings);
+                }
+                if (!validationErrors.isEmpty()) {
+                    throw new PlatformApiDataValidationException(validationErrors);
+                }
+            }
+        }
+    }
+
+    private void validateClassificationToIncomeMappings(final DataValidatorBuilder baseDataValidator, final JsonElement element,
+            final LoanProductAccountingParams classificationParameter) {
+        String parameterName = classificationParameter.getValue();
+
+        if (this.fromApiJsonHelper.parameterExists(parameterName, element)) {
+            final JsonArray classificationToIncomeMappingArray = this.fromApiJsonHelper.extractJsonArrayNamed(parameterName, element);
+            if (classificationToIncomeMappingArray != null && classificationToIncomeMappingArray.size() > 0) {
+                Map<Long, Set<Long>> classificationToAccounts = new HashMap<>();
+                List<JsonObject> processedMappings = new ArrayList<>(); // Collect processed mappings
+                                                                        // for the new method
+
+                int i = 0;
+                do {
+                    final JsonObject jsonObject = classificationToIncomeMappingArray.get(i).getAsJsonObject();
+                    final Long incomeGlAccountId = this.fromApiJsonHelper
+                            .extractLongNamed(LoanProductAccountingParams.INCOME_ACCOUNT_ID.getValue(), jsonObject);
+                    final Long classificationCodeValueId = this.fromApiJsonHelper
+                            .extractLongNamed(LoanProductAccountingParams.CLASSIFICATION_CODE_VALUE_ID.getValue(), jsonObject);
+
+                    // Validate parameters locally
+                    baseDataValidator.reset()
+                            .parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET + DOT
+                                    + LoanProductAccountingParams.INCOME_ACCOUNT_ID.getValue())
+                            .value(incomeGlAccountId).notNull().integerGreaterThanZero();
+                    baseDataValidator.reset()
+                            .parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET + DOT
+                                    + LoanProductAccountingParams.CLASSIFICATION_CODE_VALUE_ID.getValue())
+                            .value(classificationCodeValueId).notNull().integerGreaterThanZero();
+
+                    // Handle duplicate classification and GL Account validation
+                    classificationToAccounts.putIfAbsent(classificationCodeValueId, new HashSet<>());
+                    Set<Long> associatedAccounts = classificationToAccounts.get(classificationCodeValueId);
+
+                    if (associatedAccounts.contains(incomeGlAccountId)) {
+                        baseDataValidator.reset().parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET)
+                                .failWithCode("duplicate.classification.and.glAccount");
+                    }
+                    associatedAccounts.add(incomeGlAccountId);
+
+                    if (associatedAccounts.size() > 1) {
+                        baseDataValidator.reset().parameter(parameterName + OPENING_SQUARE_BRACKET + i + CLOSING_SQUARE_BRACKET)
+                                .failWithCode("multiple.glAccounts.for.classification");
+                    }
+
+                    // Collect mapping for additional validations
+                    processedMappings.add(jsonObject);
+
+                    i++;
+                } while (i < classificationToIncomeMappingArray.size());
+
+                // Call the new validation method for additional checks
+                final String dataCodeName = classificationParameter
+                        .equals(LoanProductAccountingParams.CAPITALIZED_INCOME_CLASSIFICATION_TO_INCOME_ACCOUNT_MAPPINGS)
+                                ? LoanTransactionApiConstants.CAPITALIZED_INCOME_CLASSIFICATION_CODE
+                                : LoanTransactionApiConstants.BUY_DOWN_FEE_CLASSIFICATION_CODE;
+                productToGLAccountMappingHelper.validateClassificationMappingsInDatabase(processedMappings, dataCodeName);
             }
         }
     }
@@ -2508,7 +2705,7 @@ public final class LoanProductDataValidator {
                 }
             } else if (loanProduct != null) {
                 if (!interestCalculationPeriodMethod.isDaily()) {
-                    considerPartialPeriodUpdates = loanProduct.getLoanProductRelatedDetail().isAllowPartialPeriodInterestCalcualtion();
+                    considerPartialPeriodUpdates = loanProduct.getLoanProductRelatedDetail().isAllowPartialPeriodInterestCalculation();
                 }
             }
 
@@ -2533,7 +2730,7 @@ public final class LoanProductDataValidator {
                 } else if (loanProduct != null) {
                     multiDisburseLoan = loanProduct.isMultiDisburseLoan();
                 }
-                if (multiDisburseLoan != null && multiDisburseLoan) {
+                if (multiDisburseLoan != null && multiDisburseLoan && !isProgressive(element, loanProduct)) {
                     baseDataValidator.reset().parameter(LoanProductConstants.MULTI_DISBURSE_LOAN_PARAMETER_NAME)
                             .failWithCode("not.supported.for.selected.interest.calculation.type");
                 }
@@ -2603,8 +2800,12 @@ public final class LoanProductDataValidator {
     private void validateLoanScheduleType(final String transactionProcessingStrategyCode, final DataValidatorBuilder baseDataValidator,
             final JsonElement element) {
         final String loanScheduleType = this.fromApiJsonHelper.extractStringNamed(LoanProductConstants.LOAN_SCHEDULE_TYPE, element);
-        baseDataValidator.reset().parameter(LoanProductConstants.LOAN_SCHEDULE_TYPE).value(loanScheduleType)
+        baseDataValidator.reset().parameter(LoanProductConstants.LOAN_SCHEDULE_TYPE).value(loanScheduleType).ignoreIfNull()
                 .isOneOfEnumValues(LoanScheduleType.class);
+
+        if (loanScheduleType == null || baseDataValidator.hasError()) {
+            return;
+        }
 
         if (!LoanScheduleType.PROGRESSIVE.equals(LoanScheduleType.valueOf(loanScheduleType))
                 && AdvancedPaymentScheduleTransactionProcessor.ADVANCED_PAYMENT_ALLOCATION_STRATEGY
@@ -2655,6 +2856,158 @@ public final class LoanProductDataValidator {
                 baseDataValidator.reset().parameter("graceOnPrincipalPayments.and.recurringMoratoriumOnPrincipalPeriods")
                         .value(graceOnPrincipal).value(recurMoratoriumOnPrincipal)
                         .failWithCode("causes.principal.moratorium.for.last.installment");
+            }
+        }
+    }
+
+    private void validateIncomeCapitalization(String transactionProcessingStrategyCode, JsonElement element,
+            DataValidatorBuilder baseDataValidator, Integer accountingRuleType) {
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME, element)) {
+            final String capitalizedIncomeCalculationType = this.fromApiJsonHelper
+                    .extractStringNamed(LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME)
+                    .value(capitalizedIncomeCalculationType).isOneOfEnumValues(LoanCapitalizedIncomeCalculationType.class);
+        }
+
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME, element)) {
+            final String capitalizedIncomeStrategy = this.fromApiJsonHelper
+                    .extractStringNamed(LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME)
+                    .value(capitalizedIncomeStrategy).isOneOfEnumValues(LoanCapitalizedIncomeStrategy.class);
+        }
+
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.CAPITALIZED_INCOME_TYPE_PARAM_NAME, element)) {
+            final String capitalizedIncomeType = this.fromApiJsonHelper
+                    .extractStringNamed(LoanProductConstants.CAPITALIZED_INCOME_TYPE_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.CAPITALIZED_INCOME_TYPE_PARAM_NAME).value(capitalizedIncomeType)
+                    .isOneOfEnumValues(LoanCapitalizedIncomeType.class);
+        }
+
+        if (AdvancedPaymentScheduleTransactionProcessor.ADVANCED_PAYMENT_ALLOCATION_STRATEGY.equals(transactionProcessingStrategyCode)
+                && this.fromApiJsonHelper.parameterExists(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, element)) {
+            Boolean enableIncomeCapitalization = this.fromApiJsonHelper
+                    .extractBooleanNamed(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME)
+                    .value(enableIncomeCapitalization).ignoreIfNull().validateForBooleanValue();
+            if (enableIncomeCapitalization) {
+                final String capitalizedIncomeCalculationType = this.fromApiJsonHelper
+                        .extractStringNamed(LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME, element);
+                baseDataValidator.reset().parameter(LoanProductConstants.CAPITALIZED_INCOME_CALCULATION_TYPE_PARAM_NAME)
+                        .value(capitalizedIncomeCalculationType).isOneOfEnumValues(LoanCapitalizedIncomeCalculationType.class)
+                        .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, true);
+                final String capitalizedIncomeStrategy = this.fromApiJsonHelper
+                        .extractStringNamed(LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME, element);
+                baseDataValidator.reset().parameter(LoanProductConstants.CAPITALIZED_INCOME_STRATEGY_PARAM_NAME)
+                        .value(capitalizedIncomeStrategy).isOneOfEnumValues(LoanCapitalizedIncomeStrategy.class)
+                        .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, true);
+                final String capitalizedIncomeType = this.fromApiJsonHelper
+                        .extractStringNamed(LoanProductConstants.CAPITALIZED_INCOME_TYPE_PARAM_NAME, element);
+                baseDataValidator.reset().parameter(LoanProductConstants.CAPITALIZED_INCOME_TYPE_PARAM_NAME).value(capitalizedIncomeType)
+                        .isOneOfEnumValues(LoanCapitalizedIncomeType.class)
+                        .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, true);
+                // Accounting
+                if (AccountingValidations.isAccrualBasedAccounting(accountingRuleType)) {
+                    final Long deferredIncomeLiabilityAccountId = this.fromApiJsonHelper
+                            .extractLongNamed(LoanProductAccountingParams.DEFERRED_INCOME_LIABILITY.getValue(), element);
+                    baseDataValidator.reset().parameter(LoanProductAccountingParams.DEFERRED_INCOME_LIABILITY.getValue())
+                            .value(deferredIncomeLiabilityAccountId).notNull()
+                            .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, true)
+                            .integerGreaterThanZero();
+                    final Long incomeFromDeferredIncomeAccountId = this.fromApiJsonHelper
+                            .extractLongNamed(LoanProductAccountingParams.INCOME_FROM_CAPITALIZATION.getValue(), element);
+                    baseDataValidator.reset().parameter(LoanProductAccountingParams.INCOME_FROM_CAPITALIZATION.getValue())
+                            .value(incomeFromDeferredIncomeAccountId).notNull()
+                            .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, true)
+                            .integerGreaterThanZero();
+                }
+            }
+        } else if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, element)) {
+            Boolean enableIncomeCapitalization = this.fromApiJsonHelper
+                    .extractBooleanNamed(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME, element);
+            if (Boolean.TRUE.equals(enableIncomeCapitalization)) {
+                baseDataValidator.reset().parameter(LoanProductConstants.ENABLE_INCOME_CAPITALIZATION_PARAM_NAME).failWithCode(
+                        "supported.only.for.progressive.loan.income.capitalization",
+                        "Income capitalization is only supported for Progressive loans");
+            }
+        }
+    }
+
+    private void validateBuyDownFee(String transactionProcessingStrategyCode, JsonElement element, DataValidatorBuilder baseDataValidator,
+            Integer accountingRuleType) {
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.BUY_DOWN_FEE_CALCULATION_TYPE_PARAM_NAME, element)) {
+            final String buyDownFeeCalculationType = this.fromApiJsonHelper
+                    .extractStringNamed(LoanProductConstants.BUY_DOWN_FEE_CALCULATION_TYPE_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.BUY_DOWN_FEE_CALCULATION_TYPE_PARAM_NAME)
+                    .value(buyDownFeeCalculationType).isOneOfEnumValues(LoanBuyDownFeeCalculationType.class);
+        }
+
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.BUY_DOWN_FEE_STRATEGY_PARAM_NAME, element)) {
+            final String buyDownFeeStrategy = this.fromApiJsonHelper
+                    .extractStringNamed(LoanProductConstants.BUY_DOWN_FEE_STRATEGY_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.BUY_DOWN_FEE_STRATEGY_PARAM_NAME).value(buyDownFeeStrategy)
+                    .isOneOfEnumValues(LoanBuyDownFeeStrategy.class);
+        }
+
+        if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.BUY_DOWN_FEE_INCOME_TYPE_PARAM_NAME, element)) {
+            final String buyDownFeeIncomeType = this.fromApiJsonHelper
+                    .extractStringNamed(LoanProductConstants.BUY_DOWN_FEE_INCOME_TYPE_PARAM_NAME, element);
+            baseDataValidator.reset().parameter(LoanProductConstants.BUY_DOWN_FEE_INCOME_TYPE_PARAM_NAME).value(buyDownFeeIncomeType)
+                    .isOneOfEnumValues(LoanBuyDownFeeIncomeType.class);
+        }
+
+        if (AdvancedPaymentScheduleTransactionProcessor.ADVANCED_PAYMENT_ALLOCATION_STRATEGY.equals(transactionProcessingStrategyCode)
+                && this.fromApiJsonHelper.parameterExists(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, element)) {
+            Boolean enableBuyDownFee = this.fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME,
+                    element);
+            baseDataValidator.reset().parameter(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME).value(enableBuyDownFee).ignoreIfNull()
+                    .validateForBooleanValue();
+            if (enableBuyDownFee) {
+                final String buyDownFeeCalculationType = this.fromApiJsonHelper
+                        .extractStringNamed(LoanProductConstants.BUY_DOWN_FEE_CALCULATION_TYPE_PARAM_NAME, element);
+                baseDataValidator.reset().parameter(LoanProductConstants.BUY_DOWN_FEE_CALCULATION_TYPE_PARAM_NAME)
+                        .value(buyDownFeeCalculationType).isOneOfEnumValues(LoanBuyDownFeeCalculationType.class)
+                        .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, true);
+                final String buyDownFeeStrategy = this.fromApiJsonHelper
+                        .extractStringNamed(LoanProductConstants.BUY_DOWN_FEE_STRATEGY_PARAM_NAME, element);
+                baseDataValidator.reset().parameter(LoanProductConstants.BUY_DOWN_FEE_STRATEGY_PARAM_NAME).value(buyDownFeeStrategy)
+                        .isOneOfEnumValues(LoanBuyDownFeeStrategy.class)
+                        .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, true);
+                final String buyDownFeeIncomeType = this.fromApiJsonHelper
+                        .extractStringNamed(LoanProductConstants.BUY_DOWN_FEE_INCOME_TYPE_PARAM_NAME, element);
+                baseDataValidator.reset().parameter(LoanProductConstants.BUY_DOWN_FEE_INCOME_TYPE_PARAM_NAME).value(buyDownFeeIncomeType)
+                        .isOneOfEnumValues(LoanBuyDownFeeIncomeType.class)
+                        .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, true);
+
+                // Accounting
+                if (AccountingValidations.isAccrualBasedAccounting(accountingRuleType)) {
+                    if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.MERCHANT_BUY_DOWN_FEE_PARAM_NAME, element)) {
+                        final Boolean merchantBuyDownFee = this.fromApiJsonHelper
+                                .extractBooleanNamed(LoanProductConstants.MERCHANT_BUY_DOWN_FEE_PARAM_NAME, element);
+                        baseDataValidator.reset().parameter(LoanProductConstants.MERCHANT_BUY_DOWN_FEE_PARAM_NAME).value(merchantBuyDownFee)
+                                .ignoreIfNull().validateForBooleanValue();
+                        if (Boolean.TRUE.equals(merchantBuyDownFee)) {
+                            final Long deferredIncomeLiabilityAccountId = this.fromApiJsonHelper
+                                    .extractLongNamed(LoanProductAccountingParams.BUY_DOWN_EXPENSE.getValue(), element);
+                            baseDataValidator.reset().parameter(LoanProductAccountingParams.BUY_DOWN_EXPENSE.getValue())
+                                    .value(deferredIncomeLiabilityAccountId).notNull()
+                                    .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, true)
+                                    .integerGreaterThanZero();
+                        }
+                    }
+                    final Long incomeFromDeferredIncomeAccountId = this.fromApiJsonHelper
+                            .extractLongNamed(LoanProductAccountingParams.INCOME_FROM_BUY_DOWN.getValue(), element);
+                    baseDataValidator.reset().parameter(LoanProductAccountingParams.INCOME_FROM_BUY_DOWN.getValue())
+                            .value(incomeFromDeferredIncomeAccountId).notNull()
+                            .cantBeBlankWhenParameterProvidedIs(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, true)
+                            .integerGreaterThanZero();
+                }
+            }
+        } else if (this.fromApiJsonHelper.parameterExists(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME, element)) {
+            Boolean enableBuyDownFee = this.fromApiJsonHelper.extractBooleanNamed(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME,
+                    element);
+            if (Boolean.TRUE.equals(enableBuyDownFee)) {
+                baseDataValidator.reset().parameter(LoanProductConstants.ENABLE_BUY_DOWN_FEE_PARAM_NAME).failWithCode(
+                        "supported.only.for.progressive.loan.buyDownFee", "Buy down fee is only supported for Progressive loans");
             }
         }
     }

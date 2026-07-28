@@ -48,12 +48,14 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
 
     @Override
     @Transactional(readOnly = true)
-    public CollectionData getOverdueCollectionData(final Loan loan, List<LoanDelinquencyActionData> effectiveDelinquencyList) {
+    public CollectionData getOverdueCollectionData(final Loan loan, final List<LoanDelinquencyActionData> effectiveDelinquencyList) {
+        final List<LoanTransaction> chargebackTransactions = loanTransactionReadService.fetchLoanTransactionsByType(loan.getId(), null,
+                LoanTransactionType.CHARGEBACK);
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-
         final MonetaryCurrency loanCurrency = loan.getCurrency();
+        final CollectionData collectionData = CollectionData.template();
+
         LocalDate overdueSinceDate = null;
-        CollectionData collectionData = CollectionData.template();
         BigDecimal outstandingAmount = BigDecimal.ZERO;
         boolean oldestOverdueInstallment = false;
         boolean overdueSinceDateWasSet = false;
@@ -85,7 +87,8 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
                     delinquentPenalty = delinquentPenalty.add(installment.getPenaltyChargesOutstanding(loanCurrency).getAmount());
                     if (!oldestOverdueInstallment) {
                         log.debug("Oldest installment {} {}", installment.getInstallmentNumber(), installment.getDueDate());
-                        CollectionData overDueInstallmentDelinquentData = calculateDelinquencyDataForOverdueInstallment(loan, installment);
+                        final CollectionData overDueInstallmentDelinquentData = calculateDelinquencyDataForOverdueInstallment(loan,
+                                installment, chargebackTransactions);
                         overdueSinceDate = overDueInstallmentDelinquentData.getDelinquentDate();
                         oldestOverdueInstallment = true;
                         overdueSinceDateWasSet = true;
@@ -94,7 +97,7 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
                     log.debug("Loan Id: {} with installment {} due date {}", loan.getId(), installment.getInstallmentNumber(),
                             installment.getDueDate());
                     firstNotYetDueInstallment = true;
-                    CollectionData nonOverDueInstallmentDelinquentData = calculateDelinquencyDataForNonOverdueInstallment(loan,
+                    final CollectionData nonOverDueInstallmentDelinquentData = calculateDelinquencyDataForNonOverdueInstallment(loan,
                             installment);
                     outstandingAmount = outstandingAmount.add(nonOverDueInstallmentDelinquentData.getDelinquentAmount());
                     delinquentPrincipal = delinquentPrincipal.add(nonOverDueInstallmentDelinquentData.getDelinquentPrincipal());
@@ -115,15 +118,17 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
         }
         log.debug("Loan id {} with overdue since date {} and outstanding amount {}", loan.getId(), overdueSinceDate, outstandingAmount);
 
-        Long overdueDays = 0L;
+        long overdueDays = 0L;
+        LocalDate overdueSinceDateForCalculation = overdueSinceDate;
         if (overdueSinceDate != null) {
             overdueDays = DateUtils.getDifferenceInDays(overdueSinceDate, businessDate);
             if (overdueDays < 0) {
                 overdueDays = 0L;
             }
             collectionData.setPastDueDays(overdueDays);
-            overdueSinceDate = overdueSinceDate.plusDays(graceDays.longValue());
-            collectionData.setDelinquentDate(overdueSinceDate);
+            collectionData.setPastDueDate(overdueSinceDate);
+            LocalDate delinquentStartDate = overdueSinceDate.plusDays(graceDays.longValue());
+            collectionData.setDelinquentDate(delinquentStartDate);
         }
         collectionData.setDelinquentAmount(outstandingAmount);
         collectionData.setDelinquentPrincipal(delinquentPrincipal);
@@ -131,23 +136,21 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
         collectionData.setDelinquentFee(delinquentFee);
         collectionData.setDelinquentPenalty(delinquentPenalty);
 
-        collectionData.setDelinquentDays(0L);
-        Long delinquentDays = overdueDays - graceDays;
-        if (delinquentDays > 0) {
-            calculateDelinquentDays(effectiveDelinquencyList, businessDate, collectionData, delinquentDays);
-        }
+        calculateAndSetDelinquentDays(collectionData, overdueDays, graceDays, effectiveDelinquencyList, businessDate,
+                overdueSinceDateForCalculation);
 
-        log.debug("Result: {}", collectionData.toString());
+        log.debug("Result: {}", collectionData);
         return collectionData;
     }
 
     @Override
     public LoanDelinquencyData getLoanDelinquencyData(final Loan loan, List<LoanDelinquencyActionData> effectiveDelinquencyList) {
-
+        final List<LoanTransaction> chargebackTransactions = loanTransactionReadService.fetchLoanTransactionsByType(loan.getId(), null,
+                LoanTransactionType.CHARGEBACK);
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
+        final CollectionData collectionData = CollectionData.template();
+        final Map<Long, CollectionData> loanInstallmentsCollectionData = new HashMap<>();
         LocalDate overdueSinceDate = null;
-        CollectionData collectionData = CollectionData.template();
-        Map<Long, CollectionData> loanInstallmentsCollectionData = new HashMap<>();
         BigDecimal outstandingAmount = BigDecimal.ZERO;
         boolean oldestOverdueInstallment = false;
         boolean overdueSinceDateWasSet = false;
@@ -164,7 +167,8 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
         for (LoanRepaymentScheduleInstallment installment : loan.getRepaymentScheduleInstallments()) {
             CollectionData installmentCollectionData = CollectionData.template();
             if (!installment.isObligationsMet()) {
-                installmentCollectionData = getInstallmentOverdueCollectionData(loan, installment, effectiveDelinquencyList);
+                installmentCollectionData = getInstallmentOverdueCollectionData(loan, installment, effectiveDelinquencyList,
+                        chargebackTransactions);
                 outstandingAmount = outstandingAmount.add(installmentCollectionData.getDelinquentAmount());
                 // Get the oldest overdue installment if exists
                 if (DateUtils.isBefore(installment.getDueDate(), businessDate)) {
@@ -194,81 +198,70 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
         }
         log.debug("Loan id {} with overdue since date {} and outstanding amount {}", loan.getId(), overdueSinceDate, outstandingAmount);
 
-        Long overdueDays = 0L;
+        long overdueDays = 0L;
+        LocalDate overdueSinceDateForCalculation = overdueSinceDate;
         if (overdueSinceDate != null) {
             overdueDays = DateUtils.getDifferenceInDays(overdueSinceDate, businessDate);
             if (overdueDays < 0) {
                 overdueDays = 0L;
             }
             collectionData.setPastDueDays(overdueDays);
-            overdueSinceDate = overdueSinceDate.plusDays(graceDays.longValue());
-            collectionData.setDelinquentDate(overdueSinceDate);
+            collectionData.setPastDueDate(overdueSinceDate);
+            LocalDate delinquentStartDate = overdueSinceDate.plusDays(graceDays.longValue());
+            collectionData.setDelinquentDate(delinquentStartDate);
         }
         collectionData.setDelinquentAmount(outstandingAmount);
-        collectionData.setDelinquentDays(0L);
-        Long delinquentDays = overdueDays - graceDays;
-        if (delinquentDays > 0) {
-            calculateDelinquentDays(effectiveDelinquencyList, businessDate, collectionData, delinquentDays);
-        }
+        calculateAndSetDelinquentDays(collectionData, overdueDays, graceDays, effectiveDelinquencyList, businessDate,
+                overdueSinceDateForCalculation);
         return new LoanDelinquencyData(collectionData, loanInstallmentsCollectionData);
     }
 
-    private void calculateDelinquentDays(List<LoanDelinquencyActionData> effectiveDelinquencyList, LocalDate businessDate,
-            CollectionData collectionData, Long delinquentDays) {
-        Long pausedDays = delinquencyEffectivePauseHelper.getPausedDaysBeforeDate(effectiveDelinquencyList, businessDate);
-        Long calculatedDelinquentDays = delinquentDays - pausedDays;
-        collectionData.setDelinquentDays(calculatedDelinquentDays > 0 ? calculatedDelinquentDays : 0L);
-    }
-
     private CollectionData getInstallmentOverdueCollectionData(final Loan loan, final LoanRepaymentScheduleInstallment installment,
-            List<LoanDelinquencyActionData> effectiveDelinquencyList) {
+            final List<LoanDelinquencyActionData> effectiveDelinquencyList, final List<LoanTransaction> chargebackTransactions) {
         final LocalDate businessDate = DateUtils.getBusinessLocalDate();
-        LocalDate overdueSinceDate = null;
-        CollectionData collectionData = CollectionData.template();
+        final CollectionData collectionData = CollectionData.template();
+        LocalDate overdueSinceDate;
         BigDecimal outstandingAmount = BigDecimal.ZERO;
         if (DateUtils.isBefore(installment.getDueDate(), businessDate)) {
             // checking overdue installment delinquency data
-            CollectionData overDueInstallmentDelinquentData = calculateDelinquencyDataForOverdueInstallment(loan, installment);
+            final CollectionData overDueInstallmentDelinquentData = calculateDelinquencyDataForOverdueInstallment(loan, installment,
+                    chargebackTransactions);
             outstandingAmount = outstandingAmount.add(overDueInstallmentDelinquentData.getDelinquentAmount());
             overdueSinceDate = overDueInstallmentDelinquentData.getDelinquentDate();
 
         } else {
             // checking non overdue installment for chargeback transactions before installment due date and before
             // business date
-            CollectionData nonOverDueInstallmentDelinquentData = calculateDelinquencyDataForNonOverdueInstallment(loan, installment);
+            final CollectionData nonOverDueInstallmentDelinquentData = calculateDelinquencyDataForNonOverdueInstallment(loan, installment);
             outstandingAmount = outstandingAmount.add(nonOverDueInstallmentDelinquentData.getDelinquentAmount());
             overdueSinceDate = nonOverDueInstallmentDelinquentData.getDelinquentDate();
         }
 
         // Grace days are not considered for installment level delinquency calculation currently.
-
-        Long overdueDays = 0L;
+        long overdueDays = 0L;
+        LocalDate overdueSinceDateForCalculation = overdueSinceDate;
         if (overdueSinceDate != null) {
             overdueDays = DateUtils.getDifferenceInDays(overdueSinceDate, businessDate);
             if (overdueDays < 0) {
                 overdueDays = 0L;
             }
             collectionData.setPastDueDays(overdueDays);
+            collectionData.setPastDueDate(overdueSinceDate);
             collectionData.setDelinquentDate(overdueSinceDate);
         }
         collectionData.setDelinquentAmount(outstandingAmount);
-        collectionData.setDelinquentDays(0L);
-        Long delinquentDays = overdueDays;
-        if (delinquentDays > 0) {
-            calculateDelinquentDays(effectiveDelinquencyList, businessDate, collectionData, delinquentDays);
-        }
+        calculateAndSetDelinquentDays(collectionData, overdueDays, 0, effectiveDelinquencyList, businessDate,
+                overdueSinceDateForCalculation);
         return collectionData;
 
     }
 
     private CollectionData calculateDelinquencyDataForOverdueInstallment(final Loan loan,
-            final LoanRepaymentScheduleInstallment installment) {
+            final LoanRepaymentScheduleInstallment installment, final List<LoanTransaction> chargebackTransactions) {
         final MonetaryCurrency loanCurrency = loan.getCurrency();
-        LoanRepaymentScheduleInstallment latestInstallment = loan.getLastLoanRepaymentScheduleInstallment();
-        List<LoanTransaction> chargebackTransactions = loanTransactionReadService.fetchLoanTransactionsByType(loan.getId(), null,
-                LoanTransactionType.CHARGEBACK.getValue());
-        LocalDate overdueSinceDate = null;
-        CollectionData collectionData = CollectionData.template();
+        final LoanRepaymentScheduleInstallment latestInstallment = loan.getLastLoanRepaymentScheduleInstallment();
+        final CollectionData collectionData = CollectionData.template();
+        LocalDate overdueSinceDate;
         BigDecimal outstandingAmount = BigDecimal.ZERO;
         BigDecimal delinquentPrincipal = BigDecimal.ZERO;
         BigDecimal delinquentInterest = BigDecimal.ZERO;
@@ -283,13 +276,13 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
 
         overdueSinceDate = installment.getDueDate();
         BigDecimal amountAvailable = installment.getTotalPaid(loanCurrency).getAmount();
-        boolean isLatestInstallment = Objects.equals(installment.getId(), latestInstallment.getId());
+        final boolean isLatestInstallment = Objects.equals(installment.getId(), latestInstallment.getId());
         for (LoanTransaction loanTransaction : chargebackTransactions) {
-            boolean isLoanTransactionIsOnOrAfterInstallmentFromDate = DateUtils.isEqual(loanTransaction.getTransactionDate(),
+            final boolean isLoanTransactionIsOnOrAfterInstallmentFromDate = DateUtils.isEqual(loanTransaction.getTransactionDate(),
                     installment.getFromDate()) || DateUtils.isAfter(loanTransaction.getTransactionDate(), installment.getFromDate());
-            boolean isLoanTransactionIsBeforeNotLastInstallmentDueDate = !isLatestInstallment
+            final boolean isLoanTransactionIsBeforeNotLastInstallmentDueDate = !isLatestInstallment
                     && DateUtils.isBefore(loanTransaction.getTransactionDate(), installment.getDueDate());
-            boolean isLoanTransactionIsOnOrBeforeLastInstallmentDueDate = isLatestInstallment
+            final boolean isLoanTransactionIsOnOrBeforeLastInstallmentDueDate = isLatestInstallment
                     && (DateUtils.isEqual(loanTransaction.getTransactionDate(), installment.getDueDate())
                             || DateUtils.isBefore(loanTransaction.getTransactionDate(), installment.getDueDate()));
             if (isLoanTransactionIsOnOrAfterInstallmentFromDate
@@ -324,7 +317,7 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
         BigDecimal delinquentPenalty = BigDecimal.ZERO;
 
         List<LoanTransaction> chargebackTransactions = loanTransactionReadService.fetchLoanTransactionsByType(loan.getId(), null,
-                LoanTransactionType.CHARGEBACK.getValue());
+                LoanTransactionType.CHARGEBACK);
         BigDecimal amountAvailable = installment.getTotalPaid(loanCurrency).getAmount();
         for (LoanTransaction loanTransaction : chargebackTransactions) {
 
@@ -351,6 +344,20 @@ public class LoanDelinquencyDomainServiceImpl implements LoanDelinquencyDomainSe
         collectionData.setDelinquentFee(delinquentFee);
         collectionData.setDelinquentPenalty(delinquentPenalty);
         return collectionData;
+    }
+
+    private void calculateAndSetDelinquentDays(CollectionData collectionData, long overdueDays, Integer graceDays,
+            List<LoanDelinquencyActionData> effectiveDelinquencyList, LocalDate businessDate, LocalDate overdueSinceDate) {
+        collectionData.setDelinquentDays(0L);
+        if (overdueDays > 0) {
+            Long pausedDays = delinquencyEffectivePauseHelper.getPausedDaysWithinRange(effectiveDelinquencyList, overdueSinceDate,
+                    businessDate);
+            if (pausedDays == null) {
+                pausedDays = 0L;
+            }
+            final long delinquentDays = overdueDays - pausedDays - graceDays;
+            collectionData.setDelinquentDays(delinquentDays > 0 ? delinquentDays : 0L);
+        }
     }
 
 }

@@ -20,13 +20,11 @@ package org.apache.fineract.infrastructure.jobs.service;
 
 import java.util.Date;
 import lombok.RequiredArgsConstructor;
-import org.apache.fineract.infrastructure.businessdate.service.BusinessDateReadPlatformService;
 import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.infrastructure.core.service.tenant.TenantDetailsService;
 import org.apache.fineract.infrastructure.jobs.domain.ScheduledJobDetail;
 import org.apache.fineract.infrastructure.jobs.domain.ScheduledJobRunHistory;
-import org.apache.fineract.useradministration.domain.AppUserRepositoryWrapper;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.quartz.JobKey;
@@ -43,10 +41,7 @@ import org.springframework.stereotype.Component;
 public class SchedulerJobListener implements JobListener {
 
     private final SchedularWritePlatformService schedularService;
-    private final AppUserRepositoryWrapper userRepository;
-    private final BusinessDateReadPlatformService businessDateReadPlatformService;
     private final TenantDetailsService tenantDetailsService;
-    private int stackTraceLevel = 0;
 
     @Override
     public String getName() {
@@ -61,10 +56,17 @@ public class SchedulerJobListener implements JobListener {
 
     @Override
     public void jobWasExecuted(final JobExecutionContext context, final JobExecutionException jobException) {
+        final String tenantIdentifier = context.getMergedJobDataMap().getString(SchedulerServiceConstants.TENANT_IDENTIFIER);
+        final FineractPlatformTenant existingTenant = ThreadLocalContextUtil.getTenant();
+        boolean contextInitialized = false;
+
         try {
-            String tenantIdentifier = context.getMergedJobDataMap().getString(SchedulerServiceConstants.TENANT_IDENTIFIER);
-            FineractPlatformTenant tenant = tenantDetailsService.loadTenantById(tenantIdentifier);
-            ThreadLocalContextUtil.setTenant(tenant);
+            if (existingTenant == null || !existingTenant.getTenantIdentifier().equals(tenantIdentifier)) {
+                contextInitialized = true;
+                final FineractPlatformTenant tenant = tenantDetailsService.loadTenantById(tenantIdentifier);
+                ThreadLocalContextUtil.setTenant(tenant);
+            }
+
             final Trigger trigger = context.getTrigger();
 
             final JobKey key = context.getJobDetail().getKey();
@@ -76,9 +78,7 @@ public class SchedulerJobListener implements JobListener {
             String errorLog = null;
             if (jobException != null) {
                 status = SchedulerServiceConstants.STATUS_FAILED;
-                this.stackTraceLevel = 0;
-                final Throwable throwable = getCauseFromException(jobException);
-                this.stackTraceLevel = 0;
+                final Throwable throwable = getCauseFromException(jobException, 0);
                 StackTraceElement[] stackTraceElements = null;
                 errorMessage = throwable.getMessage();
                 stackTraceElements = throwable.getStackTrace();
@@ -105,21 +105,21 @@ public class SchedulerJobListener implements JobListener {
             final ScheduledJobRunHistory runHistory = new ScheduledJobRunHistory().setScheduledJobDetail(scheduledJobDetails)
                     .setVersion(version).setStartTime(context.getFireTime()).setEndTime(new Date()).setStatus(status)
                     .setErrorMessage(errorMessage).setTriggerType(triggerType).setErrorLog(errorLog);
-            // scheduledJobDetails.addRunHistory(runHistory);
 
             this.schedularService.saveOrUpdate(scheduledJobDetails, runHistory);
         } finally {
-            ThreadLocalContextUtil.reset();
+            if (contextInitialized) {
+                ThreadLocalContextUtil.reset();
+            }
         }
     }
 
-    private Throwable getCauseFromException(final Throwable exception) {
-        if (this.stackTraceLevel <= SchedulerServiceConstants.STACK_TRACE_LEVEL && exception.getCause() != null
+    private Throwable getCauseFromException(final Throwable exception, final int stackTraceLevel) {
+        if (stackTraceLevel <= SchedulerServiceConstants.STACK_TRACE_LEVEL && exception.getCause() != null
                 && (exception.getCause().toString().contains(SchedulerServiceConstants.SCHEDULER_EXCEPTION)
                         || exception.getCause().toString().contains(SchedulerServiceConstants.JOB_EXECUTION_EXCEPTION)
                         || exception.getCause().toString().contains(SchedulerServiceConstants.JOB_METHOD_INVOCATION_FAILED_EXCEPTION))) {
-            this.stackTraceLevel++;
-            return getCauseFromException(exception.getCause());
+            return getCauseFromException(exception.getCause(), stackTraceLevel + 1);
         } else if (exception.getCause() != null) {
             return exception.getCause();
         }

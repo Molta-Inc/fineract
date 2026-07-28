@@ -70,7 +70,7 @@ public class LoanAccountRepaymentCalculationTest extends BaseLoanIntegrationTest
 
             globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                     new PutGlobalConfigurationsRequest().enabled(true));
-            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, disbursementDate);
+            BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, disbursementDate);
 
             // Loan ExternalId
             String loanExternalIdStr = UUID.randomUUID().toString();
@@ -165,7 +165,7 @@ public class LoanAccountRepaymentCalculationTest extends BaseLoanIntegrationTest
 
             globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                     new PutGlobalConfigurationsRequest().enabled(true));
-            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, disbursementDate);
+            BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, disbursementDate);
 
             // Loan ExternalId
             String loanExternalIdStr = UUID.randomUUID().toString();
@@ -260,7 +260,7 @@ public class LoanAccountRepaymentCalculationTest extends BaseLoanIntegrationTest
 
             globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                     new PutGlobalConfigurationsRequest().enabled(true));
-            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, disbursementDate);
+            BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, disbursementDate);
 
             // Loan ExternalId
             String loanExternalIdStr = UUID.randomUUID().toString();
@@ -340,7 +340,7 @@ public class LoanAccountRepaymentCalculationTest extends BaseLoanIntegrationTest
 
             globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                     new PutGlobalConfigurationsRequest().enabled(true));
-            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, disbursementDate);
+            BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, disbursementDate);
 
             // Loan ExternalId
             String loanExternalIdStr = UUID.randomUUID().toString();
@@ -416,7 +416,7 @@ public class LoanAccountRepaymentCalculationTest extends BaseLoanIntegrationTest
         assertEquals(expectedPeriodNumber, period.getPeriod());
         assertEquals(expectedPeriodFromDate, period.getFromDate());
         assertEquals(expectedPeriodDueDate, period.getDueDate());
-        assertEquals(expectedAmount, period.getTotalInstallmentAmountForPeriod());
+        assertEquals(expectedAmount, Utils.getDoubleValue(period.getTotalInstallmentAmountForPeriod()));
         assertEquals(isComplete, period.getComplete());
     }
 

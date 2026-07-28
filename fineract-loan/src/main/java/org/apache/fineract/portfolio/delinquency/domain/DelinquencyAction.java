@@ -19,5 +19,7 @@
 package org.apache.fineract.portfolio.delinquency.domain;
 
 public enum DelinquencyAction {
-    PAUSE, RESUME
+    PAUSE, //
+    RESUME, //
+    RESCHEDULE //
 }

@@ -359,7 +359,7 @@ public class Calendar extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             this.secondReminder = newValue;
         }
 
-        final String timeFormat = command.stringValueOfParameterNamed(CalendarSupportedParameters.Time_Format.getValue());
+        final String timeFormat = command.stringValueOfParameterNamed(CalendarSupportedParameters.TIME_FORMAT.getValue());
         final String time = CalendarSupportedParameters.MEETING_TIME.getValue();
         if (command.isChangeInTimeParameterNamed(CalendarSupportedParameters.MEETING_TIME.getValue(), this.meetingtime, timeFormat)) {
             final String newValue = command.stringValueOfParameterNamed(CalendarSupportedParameters.MEETING_TIME.getValue());
@@ -518,7 +518,7 @@ public class Calendar extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         final StringBuilder recurrenceBuilder = new StringBuilder(200);
 
         recurrenceBuilder.append("FREQ=");
-        recurrenceBuilder.append(frequencyType.toString().toUpperCase());
+        recurrenceBuilder.append(frequencyType.toString().toUpperCase(java.util.Locale.ROOT));
         if (interval > 1) {
             recurrenceBuilder.append(";INTERVAL=");
             recurrenceBuilder.append(interval);
@@ -526,9 +526,9 @@ public class Calendar extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         if (frequencyType.isWeekly()) {
             if (repeatsOnDay != null) {
                 final CalendarWeekDaysType weekDays = CalendarWeekDaysType.fromInt(repeatsOnDay);
-                if (!weekDays.isInvalid()) {
+                if (weekDays != CalendarWeekDaysType.INVALID) {
                     recurrenceBuilder.append(";BYDAY=");
-                    recurrenceBuilder.append(weekDays.toString().toUpperCase());
+                    recurrenceBuilder.append(weekDays.toString().toUpperCase(java.util.Locale.ROOT));
                 }
             }
         }
@@ -541,14 +541,14 @@ public class Calendar extends AbstractAuditableWithUTCDateTimeCustom<Long> {
             } else if (repeatsOnNthDayOfMonth != null && repeatsOnDay != null
                     && !repeatsOnDay.equals(CalendarWeekDaysType.INVALID.getValue())) {
                 final NthDayType nthDay = NthDayType.fromInt(repeatsOnNthDayOfMonth);
-                if (!nthDay.isInvalid()) {
+                if (nthDay != NthDayType.INVALID) {
                     recurrenceBuilder.append(";BYSETPOS=");
                     recurrenceBuilder.append(nthDay.getValue());
                 }
                 final CalendarWeekDaysType weekday = CalendarWeekDaysType.fromInt(repeatsOnDay);
-                if (!weekday.isInvalid()) {
+                if (weekday != CalendarWeekDaysType.INVALID) {
                     recurrenceBuilder.append(";BYDAY=");
-                    recurrenceBuilder.append(weekday.toString().toUpperCase());
+                    recurrenceBuilder.append(weekday.toString().toUpperCase(java.util.Locale.ROOT));
                 }
             }
         }

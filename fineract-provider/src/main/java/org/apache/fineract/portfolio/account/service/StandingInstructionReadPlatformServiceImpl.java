@@ -188,7 +188,7 @@ public class StandingInstructionReadPlatformServiceImpl implements StandingInstr
 
         if (toAccountId != null && fromAccount != null) {
             toAccount = this.portfolioAccountReadPlatformService.retrieveOne(toAccountId, mostRelevantToAccountType,
-                    fromAccount.getCurrencyCode());
+                    fromAccount.getCurrencyCodeFromCurrency());
             mostRelevantToClientId = toAccount.getClientId();
         }
 
@@ -239,7 +239,8 @@ public class StandingInstructionReadPlatformServiceImpl implements StandingInstr
     private Collection<PortfolioAccountData> retrieveToAccounts(final PortfolioAccountData excludeThisAccountFromOptions,
             final Integer toAccountType, final Long toClientId) {
 
-        final String currencyCode = excludeThisAccountFromOptions != null ? excludeThisAccountFromOptions.getCurrencyCode() : null;
+        final String currencyCode = excludeThisAccountFromOptions != null ? excludeThisAccountFromOptions.getCurrencyCodeFromCurrency()
+                : null;
 
         PortfolioAccountDTO portfolioAccountDTO = new PortfolioAccountDTO(toAccountType, toClientId, currencyCode, null, null);
         Collection<PortfolioAccountData> accountOptions = this.portfolioAccountReadPlatformService
@@ -294,10 +295,10 @@ public class StandingInstructionReadPlatformServiceImpl implements StandingInstr
             if (addAndCaluse) {
                 sqlBuilder.append(" and ");
             }
-            if (accountType.isSavingsAccount()) {
+            if (PortfolioAccountType.SAVINGS.equals(accountType)) {
                 sqlBuilder.append(" fromsavacc.id=? ");
                 paramObj.add(standingInstructionDTO.fromAccount());
-            } else if (accountType.isLoanAccount()) {
+            } else if (PortfolioAccountType.LOAN.equals(accountType)) {
                 sqlBuilder.append(" fromloanacc.id=? ");
                 paramObj.add(standingInstructionDTO.fromAccount());
             }
@@ -438,9 +439,8 @@ public class StandingInstructionReadPlatformServiceImpl implements StandingInstr
             MonthDay recurrenceOnMonthDay = null;
             final Integer recurrenceOnDay = JdbcSupport.getInteger(rs, "recurrenceOnDay");
             final Integer recurrenceOnMonth = JdbcSupport.getInteger(rs, "recurrenceOnMonth");
-            if (recurrenceOnDay != null) {
-                recurrenceOnMonthDay = MonthDay.now(DateUtils.getDateTimeZoneOfTenant()).withMonth(recurrenceOnMonth)
-                        .withDayOfMonth(recurrenceOnDay);
+            if (recurrenceOnDay != null && recurrenceOnMonth != null) {
+                recurrenceOnMonthDay = DateUtils.safeMonthDay(recurrenceOnMonth, recurrenceOnDay);
             }
 
             final Integer transferType = rs.getInt("transferType");

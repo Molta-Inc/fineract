@@ -83,12 +83,15 @@ dependencies {
     implementation project(':fineract-investor')
     implementation project(':fineract-branch')
     implementation project(':fineract-document')
+    implementation project(':fineract-mix')
     implementation project(':fineract-charge')
     implementation project(':fineract-rates')
     implementation project(':fineract-loan')
+    implementation project(':fineract-loan-origination')
     implementation project(':fineract-progressive-loan')
     implementation project(':fineract-savings')
     implementation project(':fineract-provider')
+    implementation project(':fineract-working-capital-loan')
 }
 
 tasks.withType(Tar) {
@@ -105,7 +108,7 @@ tasks.withType(Tar) {
 
 distributions {
     binary {
-        distributionBaseName = 'apache-fineract-binary'
+        distributionBaseName = 'apache-fineract-bin'
         contents {
             // Track inputs explicitly for binary distribution
             filesMatching('**/*.jar') {
@@ -136,6 +139,9 @@ distributions {
 
             from "$rootDir/fineract-doc/build/docs/pdf/en/index.pdf"
             rename ('index.pdf', 'fineract-documentation.pdf')
+
+            from "$rootDir/.atr-rat-excludes-bin.txt"
+            rename ('.atr-rat-excludes-bin.txt', '.rat-excludes')
         }
     }
     src {
@@ -145,9 +151,9 @@ distributions {
             from("$rootDir/") {
                 exclude '**/build' , '.git', '**/.gradle', '.github', '**/.settings', '**/.project', 
                         '**/.classpath', '.idea', 'out', '._.DS_Store', '.DS_Store', 'WebContent', 
-                        '**/.externalToolbuilders', '.theia', '.gitpod.yml', 'LICENSE_RELEASE', 
+                        '**/.externalToolbuilders', '.theia', 'LICENSE_RELEASE', 
                         'NOTICE_RELEASE', '**/licenses', '*.class', '**/bin', '*.log', '.dockerignore', 
-                        '**/.gitkeep'
+                        '**/.gitkeep', '*.swp', '.atr-rat-excludes-bin.txt'
                 
                 // Ensure consistent file paths for caching
                 eachFile { details ->
@@ -156,6 +162,7 @@ distributions {
             }
             rename ('LICENSE_SOURCE', 'LICENSE')
             rename ('NOTICE_SOURCE', 'NOTICE')
+            rename ('.atr-rat-excludes-src.txt', '.rat-excludes')
         }
     }
 }
@@ -170,21 +177,11 @@ tasks.named('binaryDistTar') {
               ':fineract-provider:build', ':fineract-doc:doc',
               ':fineract-client:javadocJar', ':fineract-client:sourcesJar',
               ':fineract-avro-schemas:javadocJar', ':fineract-avro-schemas:sourcesJar')
-              
-    doLast {
-        file("${buildDir}/distributions/apache-fineract-binary-${version}.tar.gz")
-            .renameTo("${buildDir}/distributions/apache-fineract-${version}-binary.tar.gz")
-    }
 }
 
 tasks.named('srcDistTar') {
     description = 'Assembles the source distribution as a tar archive'
     outputs.cacheIf { true }
-    
-    doLast {
-        file("${buildDir}/distributions/apache-fineract-src-${version}.tar.gz")
-            .renameTo("${buildDir}/distributions/apache-fineract-${version}-src.tar.gz")
-    }
 }
 
 // Disable zip distributions as they're not needed

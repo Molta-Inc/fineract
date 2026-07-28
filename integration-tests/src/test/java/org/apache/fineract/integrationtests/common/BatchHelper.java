@@ -82,7 +82,8 @@ public final class BatchHelper {
     /**
      * Returns a Map from Json String
      *
-     * @param
+     * @param jsonString
+     *            JSON input string
      * @return Map
      */
     // TODO: Rewrite to use fineract-client instead!
@@ -162,7 +163,10 @@ public final class BatchHelper {
     /**
      * Returns a BatchResponse based on the given BatchRequest, by posting the request to the server.
      *
-     * @param
+     * @param requestSpec
+     *            request specification
+     * @param responseSpec
+     *            response specification
      * @return {@code List<BatchResponse>}
      */
     // TODO: Rewrite to use fineract-client instead!
@@ -190,8 +194,10 @@ public final class BatchHelper {
      * Creates and returns a {@link org.apache.fineract.batch.command.internal.CreateClientCommandStrategy} Request as
      * one of the request in Batch.
      *
-     * @param
+     * @param requestId
+     *            request id
      * @param externalId
+     *            external id
      * @return BatchRequest
      */
     public static BatchRequest createClientRequest(final Long requestId, final String externalId) {
@@ -202,15 +208,15 @@ public final class BatchHelper {
         br.setMethod("POST");
 
         final String extId;
-        if (externalId.equals("")) {
-            extId = "ext" + String.valueOf((10000 * secureRandom.nextDouble())) + String.valueOf((10000 * secureRandom.nextDouble()));
+        if (externalId.isEmpty()) {
+            extId = UUID.randomUUID().toString();
         } else {
             extId = externalId;
         }
 
-        final String body = "{ \"officeId\": 1, \"legalFormId\":1, \"firstname\": \"Petra\", \"lastname\": \"Yton\"," + "\"externalId\": "
-                + extId + ",  \"dateFormat\": \"dd MMMM yyyy\", \"locale\": \"en\","
-                + "\"active\": false, \"submittedOnDate\": \"04 March 2009\"}";
+        final String body = "{ \"officeId\": 1, \"legalFormId\":1, \"firstname\": \"Petra\", \"lastname\": \"Yton\"," + "\"externalId\": \""
+                + extId
+                + "\",  \"dateFormat\": \"dd MMMM yyyy\", \"locale\": \"en\",\"active\": false, \"submittedOnDate\": \"04 March 2009\"}";
 
         br.setBody(body);
 
@@ -221,8 +227,10 @@ public final class BatchHelper {
      * Creates and returns a {@link org.apache.fineract.batch.command.internal.CreateClientCommandStrategy} Request as
      * one of the request in Batch.
      *
-     * @param
+     * @param requestId
+     *            request id
      * @param externalId
+     *            external id
      * @return BatchRequest
      */
     public static BatchRequest createActiveClientRequest(final Long requestId, final String externalId) {
@@ -252,8 +260,10 @@ public final class BatchHelper {
      * Creates and returns a {@link org.apache.fineract.batch.command.internal.UpdateClientCommandStrategy} Request with
      * given requestId and reference.
      *
-     * @param
-     * @param
+     * @param requestId
+     *            request id
+     * @param reference
+     *            reference id
      * @return BatchRequest
      */
     public static BatchRequest updateClientRequest(final Long requestId, final Long reference) {
@@ -469,7 +479,7 @@ public final class BatchHelper {
         final String dateString = LocalDate.now(Utils.getZoneIdOfTenant()).format(DateTimeFormatter.ofPattern(dateFormat));
 
         final String body = String.format(
-                "{\"chargeId\": \"%d\", \"locale\": \"en\", \"amount\": \"11.15\", " + "\"dateFormat\": \"%s\", \"dueDate\": \"%s\"}",
+                "{\"chargeId\": \"%d\", \"locale\": \"en\", \"amount\": \"100.0\", " + "\"dateFormat\": \"%s\", \"dueDate\": \"%s\"}",
                 chargeId, dateFormat, dateString);
         br.setBody(body);
 

@@ -18,10 +18,12 @@
  */
 package org.apache.fineract.portfolio.delinquency.starter;
 
+import java.util.List;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.event.business.service.BusinessEventNotifierService;
 import org.apache.fineract.portfolio.delinquency.domain.DelinquencyBucketMappingsRepository;
 import org.apache.fineract.portfolio.delinquency.domain.DelinquencyBucketRepository;
+import org.apache.fineract.portfolio.delinquency.domain.DelinquencyMinimumPaymentPeriodAndRuleRepository;
 import org.apache.fineract.portfolio.delinquency.domain.DelinquencyRangeRepository;
 import org.apache.fineract.portfolio.delinquency.domain.LoanDelinquencyActionRepository;
 import org.apache.fineract.portfolio.delinquency.domain.LoanDelinquencyTagHistoryRepository;
@@ -37,11 +39,14 @@ import org.apache.fineract.portfolio.delinquency.service.DelinquencyWritePlatfor
 import org.apache.fineract.portfolio.delinquency.service.DelinquencyWritePlatformServiceImpl;
 import org.apache.fineract.portfolio.delinquency.service.LoanDelinquencyDomainService;
 import org.apache.fineract.portfolio.delinquency.service.LoanDelinquencyDomainServiceImpl;
+import org.apache.fineract.portfolio.delinquency.service.PossibleNextRepaymentCalculationServiceDiscovery;
+import org.apache.fineract.portfolio.delinquency.spi.DelinquencyBucketUsageChecker;
 import org.apache.fineract.portfolio.delinquency.validator.DelinquencyActionParseAndValidator;
 import org.apache.fineract.portfolio.delinquency.validator.DelinquencyBucketParseAndValidator;
 import org.apache.fineract.portfolio.delinquency.validator.DelinquencyRangeParseAndValidator;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepository;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.service.LoanTransactionReadService;
 import org.apache.fineract.portfolio.loanproduct.domain.LoanProductRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -55,16 +60,19 @@ public class DelinquencyConfiguration {
     @ConditionalOnMissingBean(DelinquencyReadPlatformService.class)
     public DelinquencyReadPlatformService delinquencyReadPlatformService(DelinquencyRangeRepository repositoryRange,
             DelinquencyBucketRepository repositoryBucket, LoanDelinquencyTagHistoryRepository repositoryLoanDelinquencyTagHistory,
-            DelinquencyRangeMapper mapperRange, DelinquencyBucketMapper mapperBucket,
-            LoanDelinquencyTagMapper mapperLoanDelinquencyTagHistory, LoanRepository loanRepository,
+            DelinquencyMinimumPaymentPeriodAndRuleRepository minimumPaymentPeriodAndRuleRepository, DelinquencyRangeMapper mapperRange,
+            DelinquencyBucketMapper mapperBucket, LoanDelinquencyTagMapper mapperLoanDelinquencyTagHistory, LoanRepository loanRepository,
             LoanDelinquencyDomainService loanDelinquencyDomainService,
             LoanInstallmentDelinquencyTagRepository repositoryLoanInstallmentDelinquencyTag,
             LoanDelinquencyActionRepository loanDelinquencyActionRepository,
-            DelinquencyEffectivePauseHelper delinquencyEffectivePauseHelper, ConfigurationDomainService configurationDomainService) {
-        return new DelinquencyReadPlatformServiceImpl(repositoryRange, repositoryBucket, repositoryLoanDelinquencyTagHistory, mapperRange,
-                mapperBucket, mapperLoanDelinquencyTagHistory, loanRepository, loanDelinquencyDomainService,
-                repositoryLoanInstallmentDelinquencyTag, loanDelinquencyActionRepository, delinquencyEffectivePauseHelper,
-                configurationDomainService);
+            DelinquencyEffectivePauseHelper delinquencyEffectivePauseHelper, ConfigurationDomainService configurationDomainService,
+            LoanTransactionRepository loanTransactionRepository,
+            PossibleNextRepaymentCalculationServiceDiscovery possibleNextRepaymentCalculationService) {
+        return new DelinquencyReadPlatformServiceImpl(repositoryRange, repositoryBucket, minimumPaymentPeriodAndRuleRepository,
+                repositoryLoanDelinquencyTagHistory, mapperRange, mapperBucket, mapperLoanDelinquencyTagHistory, loanRepository,
+                loanDelinquencyDomainService, repositoryLoanInstallmentDelinquencyTag, loanDelinquencyActionRepository,
+                delinquencyEffectivePauseHelper, configurationDomainService, loanTransactionRepository,
+                possibleNextRepaymentCalculationService);
     }
 
     @Bean
@@ -79,12 +87,14 @@ public class DelinquencyConfiguration {
             DelinquencyReadPlatformService delinquencyReadPlatformService, LoanDelinquencyActionRepository loanDelinquencyActionRepository,
             DelinquencyActionParseAndValidator delinquencyActionParseAndValidator,
             DelinquencyEffectivePauseHelper delinquencyEffectivePauseHelper,
-            DelinquencyWritePlatformServiceHelper delinquencyWritePlatformServiceHelper) {
+            DelinquencyWritePlatformServiceHelper delinquencyWritePlatformServiceHelper,
+            DelinquencyMinimumPaymentPeriodAndRuleRepository delinquencyMinimumPaymentPeriodAndRuleRepository,
+            final List<DelinquencyBucketUsageChecker> delinquencyBucketUsageCheckers) {
         return new DelinquencyWritePlatformServiceImpl(dataValidatorBucket, dataValidatorRange, repositoryRange, repositoryBucket,
                 repositoryBucketMappings, loanDelinquencyTagRepository, loanRepository, loanProductRepository, loanDelinquencyDomainService,
                 loanInstallmentDelinquencyTagRepository, delinquencyReadPlatformService, loanDelinquencyActionRepository,
                 delinquencyActionParseAndValidator, delinquencyEffectivePauseHelper, businessEventNotifierService,
-                delinquencyWritePlatformServiceHelper);
+                delinquencyWritePlatformServiceHelper, delinquencyMinimumPaymentPeriodAndRuleRepository, delinquencyBucketUsageCheckers);
     }
 
     @Bean

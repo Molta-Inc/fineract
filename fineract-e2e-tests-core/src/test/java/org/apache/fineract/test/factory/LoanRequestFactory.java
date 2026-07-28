@@ -19,10 +19,15 @@
 package org.apache.fineract.test.factory;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.apache.fineract.client.models.DisbursementDetail;
 import org.apache.fineract.client.models.InterestPauseRequestDto;
+import org.apache.fineract.client.models.JournalEntryCommand;
+import org.apache.fineract.client.models.PostAddAndDeleteDisbursementDetailRequest;
 import org.apache.fineract.client.models.PostCreateRescheduleLoansRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdChargesChargeIdRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdRequest;
@@ -31,13 +36,18 @@ import org.apache.fineract.client.models.PostLoansLoanIdTransactionsTransactionI
 import org.apache.fineract.client.models.PostLoansRequest;
 import org.apache.fineract.client.models.PostUpdateRescheduleLoansRequest;
 import org.apache.fineract.client.models.PutLoansLoanIdRequest;
+import org.apache.fineract.client.models.SingleDebitOrCreditEntryCommand;
 import org.apache.fineract.test.data.InterestCalculationPeriodTime;
 import org.apache.fineract.test.data.InterestType;
 import org.apache.fineract.test.data.LoanTermFrequencyType;
 import org.apache.fineract.test.data.RepaymentFrequencyType;
 import org.apache.fineract.test.data.TransactionProcessingStrategyCode;
+import org.apache.fineract.test.data.accounttype.AccountTypeResolver;
+import org.apache.fineract.test.data.accounttype.DefaultAccountType;
 import org.apache.fineract.test.data.loanproduct.DefaultLoanProduct;
 import org.apache.fineract.test.data.loanproduct.LoanProductResolver;
+import org.apache.fineract.test.data.paymenttype.DefaultPaymentType;
+import org.apache.fineract.test.data.paymenttype.PaymentTypeResolver;
 import org.apache.fineract.test.helper.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -48,18 +58,20 @@ public class LoanRequestFactory {
 
     @Autowired
     private LoanProductResolver loanProductResolver;
+    @Autowired
+    private PaymentTypeResolver paymentTypeResolver;
 
     public static final String DATE_FORMAT = "dd MMMM yyyy";
     public static final String DEFAULT_LOCALE = "en";
     public static final DefaultLoanProduct DEFAULT_LOAN_PRODUCT = DefaultLoanProduct.valueOf("LP1");
+    public static final DefaultLoanProduct DEFAULT_PROGRESSIVE_LOAN_PRODUCT = DefaultLoanProduct
+            .valueOf("LP2_ADV_CUSTOM_PMT_ALLOC_PROGRESSIVE_LOAN_SCHEDULE_HORIZONTAL");
     public static final Double DEFAULT_PAYMENT_TRANSACTION_AMOUNT = 200.00;
     public static final Double DEFAULT_UNDO_TRANSACTION_AMOUNT = 0.0;
     public static final Double DEFAULT_REPAYMENT_TRANSACTION_AMOUNT = 200.00;
     public static final Double DEFAULT_CHARGEBACK_TRANSACTION_AMOUNT = 250.00;
     public static final Double DEFAULT_CHARGE_ADJUSTMENT_TRANSACTION_AMOUNT = 10.00;
     public static final String DEFAULT_EXTERNAL_ID = "";
-    public static final Long DEFAULT_PAYMENT_TYPE_ID = 4L;
-    public static final Long DEFAULT_PAYMENT_TYPE_ID_CHARGEBACK = 8L;
     public static final BigDecimal DEFAULT_PRINCIPAL = BigDecimal.valueOf(1000L);
     public static final BigDecimal DEFAULT_APPROVED_AMOUNT = BigDecimal.valueOf(1000L);
     public static final BigDecimal DEFAULT_DISBURSED_AMOUNT = BigDecimal.valueOf(1000L);
@@ -69,20 +81,25 @@ public class LoanRequestFactory {
     public static final Integer DEFAULT_REAGING_FREQUENCY_NUMBER = 1;
     public static final String DEFAULT_REAGING_FREQUENCY_TYPE = "MONTHS";
     public static final BigDecimal DEFAULT_INTEREST_RATE_PER_PERIOD = new BigDecimal(0);
-    public static final Integer DEFAULT_INTEREST_TYPE = InterestType.FLAT.value;
+    public static final Integer DEFAULT_INTEREST_TYPE = InterestType.DECLINING_BALANCE.value;
+    public static final Integer DEFAULT_PROGRESSIVE_INTEREST_TYPE = InterestType.DECLINING_BALANCE.value;
     public static final Integer DEFAULT_INTEREST_CALCULATION_PERIOD_TYPE_SAME_AS_REPAYMENT_PERIOD = InterestCalculationPeriodTime.SAME_AS_REPAYMENT_PERIOD.value;
+    public static final Integer DEFAULT_PROGRESSIVE_INTEREST_CALCULATION_PERIOD_TYPE_SAME_AS_REPAYMENT_PERIOD = InterestCalculationPeriodTime.DAILY.value;
     public static final Integer DEFAULT_AMORTIZATION_TYPE = 1;
     public static final String DEFAULT_LOAN_TYPE = "individual";
     public static final Integer DEFAULT_NUMBER_OF_REPAYMENTS = 1;
     public static final Integer DEFAULT_NUMBER_OF_INSTALLMENTS = 5;
     public static final Integer DEFAULT_REPAYMENT_FREQUENCY = 30;
     public static final String DEFAULT_TRANSACTION_PROCESSING_STRATEGY_CODE = TransactionProcessingStrategyCode.PENALTIES_FEES_INTEREST_PRINCIPAL_ORDER.value;
+    public static final String DEFAULT_PROGRESSIVE_TRANSACTION_PROCESSING_STRATEGY_CODE = TransactionProcessingStrategyCode.ADVANCED_PAYMENT_ALLOCATION.value;
 
     public static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern(DATE_FORMAT);
     public static final String DATE_SUBMIT_STRING = FORMATTER.format(Utils.now().minusMonths(1L));
     public static final String DATE_REJECT_STRING = FORMATTER.format(Utils.now().minusMonths(1L));
     public static final String DATE_WITHDRAWN_STRING = FORMATTER.format(Utils.now().minusMonths(1L));
     public static final String DEFAULT_TRANSACTION_DATE = FORMATTER.format(Utils.now().minusMonths(1L));
+
+    private final AccountTypeResolver accountTypeResolver;
 
     public PostLoansRequest defaultLoansRequest(Long clientId) {
         return new PostLoansRequest()//
@@ -103,6 +120,30 @@ public class LoanRequestFactory {
                 .interestCalculationPeriodType(DEFAULT_INTEREST_CALCULATION_PERIOD_TYPE_SAME_AS_REPAYMENT_PERIOD)//
                 .amortizationType(DEFAULT_AMORTIZATION_TYPE)//
                 .transactionProcessingStrategyCode(DEFAULT_TRANSACTION_PROCESSING_STRATEGY_CODE)//
+                .dateFormat(DATE_FORMAT)//
+                .graceOnArrearsAgeing(3)//
+        ;
+    }
+
+    public PostLoansRequest defaultProgressiveLoansRequest(final Long clientId) {
+        return new PostLoansRequest()//
+                .clientId(clientId)//
+                .productId(loanProductResolver.resolve(DEFAULT_PROGRESSIVE_LOAN_PRODUCT))//
+                .submittedOnDate(DATE_SUBMIT_STRING)//
+                .expectedDisbursementDate(DATE_SUBMIT_STRING)//
+                .principal(DEFAULT_PRINCIPAL)//
+                .locale(DEFAULT_LOCALE)//
+                .loanTermFrequency(DEFAULT_LOAN_TERM_FREQUENCY)//
+                .loanTermFrequencyType(DEFAULT_LOAN_TERM_FREQUENCY_TYPE)//
+                .loanType(DEFAULT_LOAN_TYPE)//
+                .numberOfRepayments(DEFAULT_NUMBER_OF_REPAYMENTS)//
+                .repaymentEvery(DEFAULT_REPAYMENT_FREQUENCY)//
+                .repaymentFrequencyType(DEFAULT_REPAYMENT_FREQUENCY_TYPE)//
+                .interestRatePerPeriod(DEFAULT_INTEREST_RATE_PER_PERIOD)//
+                .interestType(DEFAULT_PROGRESSIVE_INTEREST_TYPE)//
+                .interestCalculationPeriodType(DEFAULT_PROGRESSIVE_INTEREST_CALCULATION_PERIOD_TYPE_SAME_AS_REPAYMENT_PERIOD)//
+                .amortizationType(DEFAULT_AMORTIZATION_TYPE)//
+                .transactionProcessingStrategyCode(DEFAULT_PROGRESSIVE_TRANSACTION_PROCESSING_STRATEGY_CODE)//
                 .dateFormat(DATE_FORMAT)//
                 .graceOnArrearsAgeing(3)//
                 .maxOutstandingLoanBalance(new BigDecimal(10000));
@@ -147,15 +188,15 @@ public class LoanRequestFactory {
                 .principal(DEFAULT_PRINCIPAL.longValue());//
     }
 
-    public static PutLoansLoanIdRequest enableFraudFlag() {
+    public PutLoansLoanIdRequest enableFraudFlag() {
         return new PutLoansLoanIdRequest().fraud(true);
     }
 
-    public static PutLoansLoanIdRequest disableFraudFlag() {
+    public PutLoansLoanIdRequest disableFraudFlag() {
         return new PutLoansLoanIdRequest().fraud(false);
     }
 
-    public static PostLoansLoanIdRequest defaultLoanApproveRequest() {
+    public PostLoansLoanIdRequest defaultLoanApproveRequest() {
         return new PostLoansLoanIdRequest()//
                 .approvedOnDate(DATE_SUBMIT_STRING)//
                 .expectedDisbursementDate(DATE_SUBMIT_STRING)//
@@ -164,88 +205,99 @@ public class LoanRequestFactory {
                 .locale(DEFAULT_LOCALE);//
     }
 
-    public static PostLoansLoanIdRequest defaultLoanRejectRequest() {
+    public PostLoansLoanIdRequest defaultLoanRejectRequest() {
         return new PostLoansLoanIdRequest()//
                 .rejectedOnDate(DATE_REJECT_STRING)//
                 .dateFormat(DATE_FORMAT)//
                 .locale(DEFAULT_LOCALE);//
     }
 
-    public static PostLoansLoanIdRequest defaultLoanWithdrawnRequest() {
+    public PostLoansLoanIdRequest defaultLoanWithdrawnRequest() {
         return new PostLoansLoanIdRequest()//
                 .withdrawnOnDate(DATE_WITHDRAWN_STRING)//
                 .dateFormat(DATE_FORMAT)//
                 .locale(DEFAULT_LOCALE);//
     }
 
-    public static PostLoansLoanIdRequest defaultLoanDisburseRequest() {
+    public PostLoansLoanIdRequest defaultLoanDisburseRequest() {
         return new PostLoansLoanIdRequest().actualDisbursementDate(DATE_SUBMIT_STRING).transactionAmount(DEFAULT_DISBURSED_AMOUNT)
-                .paymentTypeId(Math.toIntExact(DEFAULT_PAYMENT_TYPE_ID)).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
-    }
-
-    public static PostLoansLoanIdTransactionsRequest defaultPaymentTransactionRequest() {
-        return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
-                .transactionAmount(DEFAULT_PAYMENT_TRANSACTION_AMOUNT).paymentTypeId(DEFAULT_PAYMENT_TYPE_ID).dateFormat(DATE_FORMAT)
+                .paymentTypeId(Math.toIntExact(paymentTypeResolver.resolve(DefaultPaymentType.AUTOPAY))).dateFormat(DATE_FORMAT)
                 .locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultRepaymentRequest() {
-        return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
-                .transactionAmount(DEFAULT_REPAYMENT_TRANSACTION_AMOUNT).paymentTypeId(DEFAULT_PAYMENT_TYPE_ID).dateFormat(DATE_FORMAT)
+    public PostAddAndDeleteDisbursementDetailRequest defaultLoanDisbursementDetailRequest(List<DisbursementDetail> disbursementData) {
+        return new PostAddAndDeleteDisbursementDetailRequest().disbursementData(disbursementData).dateFormat(DATE_FORMAT)
                 .locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultRefundRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultPaymentTransactionRequest() {
         return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
-                .transactionAmount(DEFAULT_REPAYMENT_TRANSACTION_AMOUNT).paymentTypeId(DEFAULT_PAYMENT_TYPE_ID).dateFormat(DATE_FORMAT)
-                .locale(DEFAULT_LOCALE);
+                .transactionAmount(DEFAULT_PAYMENT_TRANSACTION_AMOUNT)
+                .paymentTypeId(paymentTypeResolver.resolve(DefaultPaymentType.AUTOPAY)).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsTransactionIdRequest defaultRepaymentUndoRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultRepaymentRequest() {
+        return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
+                .transactionAmount(DEFAULT_REPAYMENT_TRANSACTION_AMOUNT)
+                .paymentTypeId(paymentTypeResolver.resolve(DefaultPaymentType.AUTOPAY)).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
+    }
+
+    public PostLoansLoanIdTransactionsRequest defaultRefundRequest() {
+        return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
+                .transactionAmount(DEFAULT_REPAYMENT_TRANSACTION_AMOUNT)
+                .paymentTypeId(paymentTypeResolver.resolve(DefaultPaymentType.AUTOPAY)).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
+    }
+
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultRepaymentUndoRequest() {
         return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
                 .transactionAmount(DEFAULT_UNDO_TRANSACTION_AMOUNT).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsTransactionIdRequest defaultRepaymentAdjustRequest(double amount) {
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultCapitalizedIncomeAdjustmentUndoRequest() {
+        return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
+                .transactionAmount(DEFAULT_UNDO_TRANSACTION_AMOUNT).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
+    }
+
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultRepaymentAdjustRequest(double amount) {
         return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionDate(DEFAULT_TRANSACTION_DATE).transactionAmount(amount)
                 .dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsTransactionIdRequest defaultTransactionUndoRequest() {
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultTransactionUndoRequest() {
         return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
                 .transactionAmount(DEFAULT_UNDO_TRANSACTION_AMOUNT).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsTransactionIdRequest defaultRefundUndoRequest() {
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultRefundUndoRequest() {
         return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
                 .transactionAmount(DEFAULT_UNDO_TRANSACTION_AMOUNT).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsTransactionIdRequest defaultChargebackRequest() {
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultChargebackRequest() {
         return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionAmount(DEFAULT_CHARGEBACK_TRANSACTION_AMOUNT)
-                .locale(DEFAULT_LOCALE).paymentTypeId(DEFAULT_PAYMENT_TYPE_ID_CHARGEBACK);
+                .locale(DEFAULT_LOCALE).paymentTypeId(paymentTypeResolver.resolve(DefaultPaymentType.REPAYMENT_ADJUSTMENT_CHARGEBACK));
     }
 
-    public static PostLoansLoanIdChargesChargeIdRequest defaultChargeAdjustmentRequest() {
+    public PostLoansLoanIdChargesChargeIdRequest defaultChargeAdjustmentRequest() {
         return new PostLoansLoanIdChargesChargeIdRequest().amount(DEFAULT_CHARGE_ADJUSTMENT_TRANSACTION_AMOUNT)
                 .externalId(DEFAULT_EXTERNAL_ID);
     }
 
-    public static PostLoansLoanIdTransactionsTransactionIdRequest defaultChargeAdjustmentTransactionUndoRequest() {
+    public PostLoansLoanIdTransactionsTransactionIdRequest defaultChargeAdjustmentTransactionUndoRequest() {
         return new PostLoansLoanIdTransactionsTransactionIdRequest().transactionDate(DEFAULT_TRANSACTION_DATE)
                 .transactionAmount(DEFAULT_UNDO_TRANSACTION_AMOUNT).dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultChargeOffRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultChargeOffRequest() {
         return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE).dateFormat(DATE_FORMAT)
                 .locale(DEFAULT_LOCALE);
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultUndoChargeOffRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultUndoChargeOffRequest() {
         return new PostLoansLoanIdTransactionsRequest();
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultReAgingRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultReAgingRequest() {
         return new PostLoansLoanIdTransactionsRequest()//
                 .dateFormat(DATE_FORMAT)//
                 .locale(DEFAULT_LOCALE)//
@@ -255,17 +307,17 @@ public class LoanRequestFactory {
                 .numberOfInstallments(DEFAULT_NUMBER_OF_INSTALLMENTS);//
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultLoanReAmortizationRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultLoanReAmortizationRequest() {
         return new PostLoansLoanIdTransactionsRequest().dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE);
     }
 
-    public static PostUpdateRescheduleLoansRequest defaultLoanRescheduleUpdateRequest() {
+    public PostUpdateRescheduleLoansRequest defaultLoanRescheduleUpdateRequest() {
         return new PostUpdateRescheduleLoansRequest()//
                 .locale(DEFAULT_LOCALE)//
                 .dateFormat(DATE_FORMAT);
     }
 
-    public static PostCreateRescheduleLoansRequest defaultLoanRescheduleCreateRequest(Long loanId, String fromDate, String toDate) {
+    public PostCreateRescheduleLoansRequest defaultLoanRescheduleCreateRequest(Long loanId, String fromDate, String toDate) {
         return new PostCreateRescheduleLoansRequest()//
                 .submittedOnDate(DATE_SUBMIT_STRING)//
                 .rescheduleFromDate(fromDate)//
@@ -276,13 +328,45 @@ public class LoanRequestFactory {
                 .dateFormat(DATE_FORMAT);
     }
 
-    public static PostLoansLoanIdTransactionsRequest defaultWriteOffRequest() {
+    public PostLoansLoanIdTransactionsRequest defaultWriteOffRequest() {
         return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE).dateFormat(DATE_FORMAT)
                 .locale(DEFAULT_LOCALE).note("Write Off");
     }
 
-    public static InterestPauseRequestDto defaultInterestPauseRequest() {
+    public InterestPauseRequestDto defaultInterestPauseRequest() {
         return new InterestPauseRequestDto().dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE).startDate(DEFAULT_TRANSACTION_DATE)
                 .endDate(DEFAULT_TRANSACTION_DATE);
+    }
+
+    public PostLoansLoanIdTransactionsRequest defaultCapitalizedIncomeRequest() {
+        return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE).dateFormat(DATE_FORMAT)
+                .locale(DEFAULT_LOCALE).note("Capitalized Income");
+    }
+
+    public PostLoansLoanIdRequest defaultContractTerminationUndoRequest() {
+        return new PostLoansLoanIdRequest().note("Contract Termination Undo");
+    }
+
+    public PostLoansLoanIdRequest defaultLoanContractTerminationRequest() {
+        return new PostLoansLoanIdRequest().dateFormat(DATE_FORMAT).locale(DEFAULT_LOCALE).note("Contract Termination");
+    }
+
+    public PostLoansLoanIdTransactionsRequest defaultBuyDownFeeIncomeRequest() {
+        return new PostLoansLoanIdTransactionsRequest().transactionDate(DEFAULT_TRANSACTION_DATE).dateFormat(DATE_FORMAT)
+                .locale(DEFAULT_LOCALE).note("Buy Down Fee");
+    }
+
+    public JournalEntryCommand defaultManualJournalEntryRequest(BigDecimal amount) {
+        final Long glAccountDebit = accountTypeResolver.resolve(DefaultAccountType.LOANS_RECEIVABLE);
+        final Long glAccountCredit = accountTypeResolver.resolve(DefaultAccountType.SUSPENSE_CLEARING_ACCOUNT);
+
+        return new JournalEntryCommand().amount(BigDecimal.TEN).officeId(1L).currencyCode("USD").locale(DEFAULT_LOCALE)
+                .dateFormat("uuuu-MM-dd").transactionDate(LocalDate.of(2024, 1, 1))
+                .addCreditsItem(new SingleDebitOrCreditEntryCommand().glAccountId(glAccountCredit).amount(amount))
+                .addDebitsItem(new SingleDebitOrCreditEntryCommand().glAccountId(glAccountDebit).amount(amount));
+    }
+
+    public JournalEntryCommand defaultManualJournalEntryRequest(BigDecimal amount, String externalAssetOwner) {
+        return defaultManualJournalEntryRequest(amount).externalAssetOwner(externalAssetOwner);
     }
 }

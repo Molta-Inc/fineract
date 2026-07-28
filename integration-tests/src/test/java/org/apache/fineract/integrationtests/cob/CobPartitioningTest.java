@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +39,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.common.AccountingConstants;
+import org.apache.fineract.client.models.COBPartition;
 import org.apache.fineract.client.models.GetFinancialActivityAccountsResponse;
 import org.apache.fineract.client.models.PostFinancialActivityAccountsRequest;
 import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
@@ -59,10 +59,10 @@ import org.apache.fineract.integrationtests.common.loans.LoanApplicationTestBuil
 import org.apache.fineract.integrationtests.common.loans.LoanProductTestBuilder;
 import org.apache.fineract.integrationtests.common.loans.LoanStatusChecker;
 import org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper;
-import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.lang.NonNull;
 
 @SuppressWarnings("rawtypes")
 @Slf4j
@@ -124,14 +124,18 @@ public class CobPartitioningTest extends BaseLoanIntegrationTest {
             List<Integer> loanIds = new CopyOnWriteArrayList<>();
 
             // Let's create 1, 2, ..., N-1, N loans
-            final CountDownLatch createLatch = new CountDownLatch(N);
+            final CountDownLatch createLatch = new CountDownLatch(N - 1);
             Integer loanProductID = createLoanProduct();
             List<Future<?>> futures = new ArrayList<>();
-            for (int i = 0; i < N; i++) {
+            // Warm up (EclipseLink sometimes fails if JPQL cache is not warm up but concurrent queries are executed)
+            Integer clientID = createClient();
+            Integer loanID = createLoanForClient(clientID, loanProductID);
+            loanIds.add(loanID);
+            for (int i = 1; i < N; i++) {
                 futures.add(executorService.submit(() -> {
-                    Integer clientID = createClient();
-                    Integer loanID = createLoanForClient(clientID, loanProductID);
-                    loanIds.add(loanID);
+                    Integer internalClientID = createClient();
+                    Integer internalLoanID = createLoanForClient(internalClientID, loanProductID);
+                    loanIds.add(internalLoanID);
                     createLatch.countDown();
                 }));
             }
@@ -140,8 +144,10 @@ public class CobPartitioningTest extends BaseLoanIntegrationTest {
 
             // Force close loans 3, 4, ... , N-3, N-2
             Collections.sort(loanIds);
-            final CountDownLatch closeLatch = new CountDownLatch(N - 4);
-            for (int i = 2; i < N - 2; i++) {
+            final CountDownLatch closeLatch = new CountDownLatch(N - 5);
+            // Warm up (EclipseLink sometimes fails if JPQL cache is not warm up but concurrent queries are executed)
+            LOAN_TRANSACTION_HELPER.forecloseLoan("02 March 2020", loanIds.get(2));
+            for (int i = 3; i < N - 2; i++) {
                 final int idx = i;
                 futures.add(executorService.submit(() -> {
                     LOAN_TRANSACTION_HELPER.forecloseLoan("02 March 2020", loanIds.get(idx));
@@ -158,19 +164,15 @@ public class CobPartitioningTest extends BaseLoanIntegrationTest {
             closeLatch.await();
 
             // Let's retrieve the partitions
-            List<Map<String, Object>> cobPartitions = CobHelper.getCobPartitions(REQUEST_SPEC, RESPONSE_SPEC, 3, "");
+            List<COBPartition> cobPartitions = CobHelper.getCobPartitions(3);
             log.info("\nLoans created: {},\nRetrieved partitions: {}", loanIds, cobPartitions);
             Assertions.assertEquals(2, cobPartitions.size());
 
-            Assertions.assertEquals(0, cobPartitions.get(0).get("pageNo"));
-            Assertions.assertEquals(loanIds.get(0), cobPartitions.get(0).get("minId"));
-            Assertions.assertEquals(loanIds.get(8), cobPartitions.get(0).get("maxId"));
-            Assertions.assertEquals(3, cobPartitions.get(0).get("count"));
+            Assertions.assertEquals(loanIds.get(0), cobPartitions.get(0).getMinId().intValue());
+            Assertions.assertEquals(loanIds.get(8), cobPartitions.get(0).getMaxId().intValue());
 
-            Assertions.assertEquals(1, cobPartitions.get(1).get("pageNo"));
-            Assertions.assertEquals(loanIds.get(9), cobPartitions.get(1).get("minId"));
-            Assertions.assertEquals(loanIds.get(9), cobPartitions.get(1).get("maxId"));
-            Assertions.assertEquals(1, cobPartitions.get(1).get("count"));
+            Assertions.assertEquals(loanIds.get(9), cobPartitions.get(1).getMinId().intValue());
+            Assertions.assertEquals(loanIds.get(9), cobPartitions.get(1).getMaxId().intValue());
 
             executorService.shutdown();
         } finally {
@@ -192,7 +194,7 @@ public class CobPartitioningTest extends BaseLoanIntegrationTest {
     private void setInitialBusinessDate(String date) {
         globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                 new PutGlobalConfigurationsRequest().enabled(true));
-        BusinessDateHelper.updateBusinessDate(REQUEST_SPEC, RESPONSE_SPEC, BUSINESS_DATE, LocalDate.parse(date));
+        BusinessDateHelper.updateBusinessDate(BUSINESS_DATE, LocalDate.parse(date));
         globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.PENALTY_WAIT_PERIOD,
                 new PutGlobalConfigurationsRequest().value(0L));
     }
@@ -202,13 +204,13 @@ public class CobPartitioningTest extends BaseLoanIntegrationTest {
         REQUEST_SPEC.header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey());
         REQUEST_SPEC.header("Fineract-Platform-TenantId", "default");
         RESPONSE_SPEC = new ResponseSpecBuilder().expectStatusCode(200).build();
-        BusinessDateHelper.updateBusinessDate(REQUEST_SPEC, RESPONSE_SPEC, BUSINESS_DATE, TODAYS_DATE);
+        BusinessDateHelper.updateBusinessDate(BUSINESS_DATE, TODAYS_DATE);
         globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                 new PutGlobalConfigurationsRequest().enabled(false));
         globalConfigurationHelper.manageConfigurations(GlobalConfigurationConstants.ENABLE_AUTO_GENERATED_EXTERNAL_ID, false);
     }
 
-    @NotNull
+    @NonNull
     private Integer createClient() {
         final Integer clientID = ClientHelper.createClient(REQUEST_SPEC, RESPONSE_SPEC);
         Assertions.assertNotNull(clientID);
@@ -225,7 +227,7 @@ public class CobPartitioningTest extends BaseLoanIntegrationTest {
         return loanProductID;
     }
 
-    @NotNull
+    @NonNull
     private Integer createLoanForClient(Integer clientID, Integer loanProductID) {
 
         HashMap loanStatusHashMap;

@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.fineract.accounting.common.AccountingConstants;
+import org.apache.fineract.client.models.ExternalAssetOwnerRequest;
 import org.apache.fineract.client.models.ExternalAssetOwnerSearchRequest;
 import org.apache.fineract.client.models.ExternalOwnerJournalEntryData;
 import org.apache.fineract.client.models.ExternalOwnerTransferJournalEntryData;
@@ -33,7 +34,6 @@ import org.apache.fineract.client.models.GetFinancialActivityAccountsResponse;
 import org.apache.fineract.client.models.PageExternalTransferData;
 import org.apache.fineract.client.models.PagedRequestExternalAssetOwnerSearchRequest;
 import org.apache.fineract.client.models.PostFinancialActivityAccountsRequest;
-import org.apache.fineract.client.models.PostInitiateTransferRequest;
 import org.apache.fineract.client.models.PostInitiateTransferResponse;
 import org.apache.fineract.client.util.CallFailedRuntimeException;
 import org.apache.fineract.client.util.Calls;
@@ -44,17 +44,19 @@ public class ExternalAssetOwnerHelper {
 
     public ExternalAssetOwnerHelper() {}
 
-    public PostInitiateTransferResponse initiateTransferByLoanId(Long loanId, String command, PostInitiateTransferRequest request) {
+    public PostInitiateTransferResponse initiateTransferByLoanId(Long loanId, String command, ExternalAssetOwnerRequest request) {
         return Calls.ok(FineractClientHelper.getFineractClient().externalAssetOwners.transferRequestWithLoanId(loanId, request, command));
     }
 
     public void cancelTransferByTransferExternalId(String transferExternalId) {
-        Calls.ok(FineractClientHelper.getFineractClient().externalAssetOwners.transferRequestWithId1(transferExternalId, "cancel"));
+        Calls.ok(FineractClientHelper.getFineractClient().externalAssetOwners.transferRequestWithIdByExternalId(transferExternalId,
+                "cancel"));
     }
 
     public void cancelTransferByTransferExternalIdError(String transferExternalId) {
-        CallFailedRuntimeException exception = assertThrows(CallFailedRuntimeException.class, () -> Calls
-                .okR(FineractClientHelper.getFineractClient().externalAssetOwners.transferRequestWithId1(transferExternalId, "cancel")));
+        CallFailedRuntimeException exception = assertThrows(CallFailedRuntimeException.class,
+                () -> Calls.okR(FineractClientHelper.getFineractClient().externalAssetOwners
+                        .transferRequestWithIdByExternalId(transferExternalId, "cancel")));
         assertEquals(403, exception.getResponse().code());
     }
 
@@ -100,8 +102,8 @@ public class ExternalAssetOwnerHelper {
 
     public PagedRequestExternalAssetOwnerSearchRequest buildExternalAssetOwnerSearchRequest(String text, String attribute,
             LocalDate fromDate, LocalDate toDate, Integer page, Integer size) {
-        // increase it if tests create more than 100 items
-        final Integer DEFAULT_PAGE_SIZE = 100;
+        // increase it if tests create more than 200 items
+        final Integer DEFAULT_PAGE_SIZE = 200;
         PagedRequestExternalAssetOwnerSearchRequest pagedRequest = new PagedRequestExternalAssetOwnerSearchRequest();
         ExternalAssetOwnerSearchRequest searchRequest = new ExternalAssetOwnerSearchRequest();
         searchRequest.text(text);

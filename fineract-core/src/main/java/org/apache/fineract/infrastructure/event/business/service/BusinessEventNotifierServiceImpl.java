@@ -36,11 +36,10 @@ import org.apache.fineract.infrastructure.event.business.domain.BusinessEvent;
 import org.apache.fineract.infrastructure.event.business.domain.NoExternalEvent;
 import org.apache.fineract.infrastructure.event.external.service.ExternalEventService;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionExecution;
 import org.springframework.transaction.TransactionExecutionListener;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -89,7 +88,6 @@ public class BusinessEventNotifierServiceImpl implements BusinessEventNotifierSe
     }
 
     @Override
-    @Transactional(propagation = Propagation.SUPPORTS)
     public void notifyPostBusinessEvent(BusinessEvent<?> businessEvent) {
         throwExceptionIfBulkEvent(businessEvent);
         boolean isExternalEvent = !(businessEvent instanceof NoExternalEvent);
@@ -198,19 +196,29 @@ public class BusinessEventNotifierServiceImpl implements BusinessEventNotifierSe
     }
 
     @Override
-    public void beforeCommit(TransactionExecution transaction) {
-        List<BusinessEventWithContext> businessEventWithContexts = transactionBusinessEvents.get().peek();
-        if (!businessEventWithContexts.isEmpty()) {
-            FineractContext originalContext = ThreadLocalContextUtil.getContext();
-            try {
-                for (BusinessEventWithContext businessEventWithContext : businessEventWithContexts) {
-                    ThreadLocalContextUtil.init(businessEventWithContext.getFineractContext());
-                    externalEventService.postEvent(businessEventWithContext.getEvent());
-                }
-            } finally {
-                ThreadLocalContextUtil.init(originalContext);
-            }
+    public void beforeCommit(@NonNull final TransactionExecution transaction) {
+        final List<BusinessEventWithContext> businessEventWithContexts = transactionBusinessEvents.get().peek();
+        if (businessEventWithContexts.isEmpty()) {
+            return;
         }
+        final FineractContext originalContext = ThreadLocalContextUtil.getContext();
+        businessEventWithContexts.forEach(businessEventWithContext -> {
+            final FineractContext currentContext = businessEventWithContext.getFineractContext();
+            boolean swappedContext = false;
+            try {
+                if (!originalContext.equals(currentContext)) {
+                    swappedContext = true;
+                    ThreadLocalContextUtil.init(currentContext);
+                }
+                externalEventService.postEvent(businessEventWithContext.getEvent());
+            } finally {
+                // Back to original context if we swapped it. We should restore the original context rather than reset
+                // it completely
+                if (swappedContext) {
+                    ThreadLocalContextUtil.init(originalContext);
+                }
+            }
+        });
     }
 
     @Override

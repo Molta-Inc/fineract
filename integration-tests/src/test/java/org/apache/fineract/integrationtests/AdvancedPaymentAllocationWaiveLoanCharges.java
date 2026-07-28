@@ -21,33 +21,32 @@ package org.apache.fineract.integrationtests;
 import static org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.impl.AdvancedPaymentScheduleTransactionProcessor.ADVANCED_PAYMENT_ALLOCATION_STRATEGY;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.client.models.AdvancedPaymentData;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactions;
 import org.apache.fineract.client.models.PaymentAllocationOrder;
 import org.apache.fineract.client.models.PostLoanProductsRequest;
-import org.apache.fineract.client.models.PostLoanProductsResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdChargesChargeIdRequest;
-import org.apache.fineract.integrationtests.common.ClientHelper;
-import org.apache.fineract.integrationtests.common.loans.LoanTestLifecycleExtension;
+import org.apache.fineract.integrationtests.client.feign.FeignLoanTestBase;
+import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleProcessingType;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.domain.LoanScheduleType;
 import org.apache.fineract.portfolio.loanproduct.domain.PaymentAllocationType;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 @Slf4j
-@ExtendWith(LoanTestLifecycleExtension.class)
-public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrationTest {
+public class AdvancedPaymentAllocationWaiveLoanCharges extends FeignLoanTestBase {
 
     @Test
     public void testAddFeeAndWaiveAdvancedPaymentAllocationNoBackdated() {
         runAt("01 January 2023", () -> {
             // Create Client
-            Long clientId = clientHelper.createClient(ClientHelper.defaultClientCreationRequest()).getClientId();
+            Long clientId = createClient();
             // Create Loan Product
             Long loanProductId = createLoanProductWithAdvancedAllocation();
             // Apply and Approve Loan
@@ -59,7 +58,7 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
             // Add Penalty
             Long loanChargeId = addCharge(loanId, false, 50, "01 January 2023");
             // When Waive Created Penalty
-            loanTransactionHelper.waiveLoanCharge(loanId, loanChargeId, new PostLoansLoanIdChargesChargeIdRequest());
+            waiveLoanCharge(loanId, loanChargeId, new PostLoansLoanIdChargesChargeIdRequest());
 
             // Then verify
             verifyTransactions(loanId, //
@@ -67,12 +66,12 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
                     transaction(50, "Waive loan charges", "01 January 2023", 1000.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0.0) //
             );
 
-            GetLoansLoanIdResponse loanDetails = loanTransactionHelper.getLoan(requestSpec, responseSpec, loanId.intValue());
+            GetLoansLoanIdResponse loanDetails = getLoanDetails(loanId);
             GetLoansLoanIdTransactions waiveTransaction = loanDetails.getTransactions().get(1);
             Assertions.assertNotNull(waiveTransaction.getLoanChargePaidByList());
             Assertions.assertEquals(1, waiveTransaction.getLoanChargePaidByList().size());
             Assertions.assertEquals(loanChargeId, waiveTransaction.getLoanChargePaidByList().get(0).getChargeId());
-            Assertions.assertEquals(50.0, waiveTransaction.getLoanChargePaidByList().get(0).getAmount());
+            Assertions.assertEquals(50.0, Utils.getDoubleValue(waiveTransaction.getLoanChargePaidByList().get(0).getAmount()));
         });
     }
 
@@ -80,7 +79,7 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
     public void testAddPenaltyAndWaiveAdvancedPaymentAllocationNoBackDated() {
         runAt("01 January 2023", () -> {
             // Create Client
-            Long clientId = clientHelper.createClient(ClientHelper.defaultClientCreationRequest()).getClientId();
+            Long clientId = createClient();
             // Create Loan Product
             Long loanProductId = createLoanProductWithAdvancedAllocation();
             // Apply and Approve Loan
@@ -92,7 +91,7 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
             // Add Penalty
             Long loanChargeId = addCharge(loanId, true, 50, "01 January 2023");
             // When Waive Created Penalty
-            loanTransactionHelper.waiveLoanCharge(loanId, loanChargeId, new PostLoansLoanIdChargesChargeIdRequest());
+            waiveLoanCharge(loanId, loanChargeId, new PostLoansLoanIdChargesChargeIdRequest());
 
             // Then verify
             verifyTransactions(loanId, //
@@ -100,12 +99,12 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
                     transaction(50, "Waive loan charges", "01 January 2023", 1000.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0.0) //
             );
 
-            GetLoansLoanIdResponse loanDetails = loanTransactionHelper.getLoan(requestSpec, responseSpec, loanId.intValue());
+            GetLoansLoanIdResponse loanDetails = getLoanDetails(loanId);
             GetLoansLoanIdTransactions waiveTransaction = loanDetails.getTransactions().get(1);
             Assertions.assertNotNull(waiveTransaction.getLoanChargePaidByList());
             Assertions.assertEquals(1, waiveTransaction.getLoanChargePaidByList().size());
             Assertions.assertEquals(loanChargeId, waiveTransaction.getLoanChargePaidByList().get(0).getChargeId());
-            Assertions.assertEquals(50.0, waiveTransaction.getLoanChargePaidByList().get(0).getAmount());
+            Assertions.assertEquals(50.0, Utils.getDoubleValue(waiveTransaction.getLoanChargePaidByList().get(0).getAmount()));
         });
     }
 
@@ -113,7 +112,7 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
     public void testAddPenaltyAndWaiveAdvancedPaymentAllocationAndBackdatedRepayment() {
         runAt("01 January 2023", () -> {
             // Create Client
-            Long clientId = clientHelper.createClient(ClientHelper.defaultClientCreationRequest()).getClientId();
+            Long clientId = createClient();
             // Create Loan Product
             Long loanProductId = createLoanProductWithAdvancedAllocation();
             // Apply and Approve Loan
@@ -130,7 +129,7 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
             Long loanChargeId = addCharge(loanId, true, 50, "05 January 2023");
 
             // When Waive Created Penalty
-            loanTransactionHelper.waiveLoanCharge(loanId, loanChargeId, new PostLoansLoanIdChargesChargeIdRequest());
+            waiveLoanCharge(loanId, loanChargeId, new PostLoansLoanIdChargesChargeIdRequest());
 
             // Then verify
             verifyTransactions(loanId, //
@@ -138,12 +137,12 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
                     transaction(50, "Waive loan charges", "05 January 2023", 1000.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0.0) //
             );
 
-            GetLoansLoanIdResponse loanDetails = loanTransactionHelper.getLoan(requestSpec, responseSpec, loanId.intValue());
+            GetLoansLoanIdResponse loanDetails = getLoanDetails(loanId);
             GetLoansLoanIdTransactions waiveTransaction = loanDetails.getTransactions().get(1);
             Assertions.assertNotNull(waiveTransaction.getLoanChargePaidByList());
             Assertions.assertEquals(1, waiveTransaction.getLoanChargePaidByList().size());
             Assertions.assertEquals(loanChargeId, waiveTransaction.getLoanChargePaidByList().get(0).getChargeId());
-            Assertions.assertEquals(50.0, waiveTransaction.getLoanChargePaidByList().get(0).getAmount());
+            Assertions.assertEquals(50.0, Utils.getDoubleValue(waiveTransaction.getLoanChargePaidByList().get(0).getAmount()));
 
             addRepaymentForLoan(loanId, 200.0, "03 January 2023");
 
@@ -170,13 +169,22 @@ public class AdvancedPaymentAllocationWaiveLoanCharges extends BaseLoanIntegrati
         return advancedPaymentData;
     }
 
+    private static List<PaymentAllocationOrder> getPaymentAllocationOrder(PaymentAllocationType... paymentAllocationTypes) {
+        AtomicInteger integer = new AtomicInteger(1);
+        return Arrays.stream(paymentAllocationTypes).map(pat -> {
+            PaymentAllocationOrder paymentAllocationOrder = new PaymentAllocationOrder();
+            paymentAllocationOrder.setPaymentAllocationRule(pat.name());
+            paymentAllocationOrder.setOrder(integer.getAndIncrement());
+            return paymentAllocationOrder;
+        }).toList();
+    }
+
     protected Long createLoanProductWithAdvancedAllocation() {
         PostLoanProductsRequest req = createOnePeriod30DaysLongNoInterestPeriodicAccrualProduct();
         req.transactionProcessingStrategyCode(ADVANCED_PAYMENT_ALLOCATION_STRATEGY).loanScheduleType(LoanScheduleType.PROGRESSIVE.name())
                 .loanScheduleProcessingType(LoanScheduleProcessingType.HORIZONTAL.toString());
         req.addPaymentAllocationItem(createDefaultPaymentAllocationWithMixedGrouping());
-        PostLoanProductsResponse loanProduct = loanTransactionHelper.createLoanProduct(req);
-        return loanProduct.getResourceId();
+        return createLoanProduct(req);
     }
 
 }

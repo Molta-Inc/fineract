@@ -18,18 +18,19 @@
  */
 package org.apache.fineract.portfolio.loanaccount.service;
 
-import java.time.LocalDate;
+import java.util.List;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 
 public interface ReprocessLoanTransactionsService {
 
     void reprocessTransactions(Loan loan);
 
-    void reprocessTransactionsWithPostTransactionChecks(Loan loan, LocalDate transactionDate);
+    void reprocessTransactions(Loan loan, List<LoanTransaction> loanTransactions);
 
-    void processPostDisbursementTransactions(Loan loan);
+    void reprocessTransactionsWithoutChecks(Loan loan, List<LoanTransaction> newTransactions);
 
-    void removeLoanCharge(Loan loan, LoanCharge loanCharge);
+    void processLatestTransaction(LoanTransaction loanTransaction, Loan loan);
 
+    void updateModel(Loan loan);
 }

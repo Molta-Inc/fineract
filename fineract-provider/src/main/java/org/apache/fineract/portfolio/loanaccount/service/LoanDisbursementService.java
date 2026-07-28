@@ -24,15 +24,21 @@ import com.google.common.base.Splitter;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import jakarta.validation.constraints.NotNull;
+import com.google.gson.JsonPrimitive;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
 import org.apache.fineract.infrastructure.configuration.service.TemporaryConfigurationServiceContainer;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
@@ -49,16 +55,23 @@ import org.apache.fineract.portfolio.loanaccount.domain.LoanDisbursementDetails;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTrancheCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTrancheDisbursementCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionRepository;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanChargeValidator;
 import org.apache.fineract.portfolio.loanaccount.serialization.LoanDisbursementValidator;
 import org.apache.fineract.portfolio.paymentdetail.domain.PaymentDetail;
+import org.springframework.lang.NonNull;
 
+@Slf4j
 @RequiredArgsConstructor
 public class LoanDisbursementService {
 
     private final LoanChargeValidator loanChargeValidator;
     private final LoanDisbursementValidator loanDisbursementValidator;
-    private final ReprocessLoanTransactionsService reprocessLoanTransactionsService;
+    private final LoanChargeService loanChargeService;
+    private final LoanBalanceService loanBalanceService;
+    private final LoanJournalEntryPoster loanJournalEntryPoster;
+    private final LoanTransactionRepository loanTransactionRepository;
+    private final ConfigurationDomainService configurationDomainService;
 
     public void updateDisbursementDetails(final Loan loan, final JsonCommand jsonCommand, final Map<String, Object> actualChanges) {
         final List<Long> disbursementList = loan.fetchDisbursementIds();
@@ -76,14 +89,14 @@ public class LoanDisbursementService {
             if (disbursementDataArray != null && !disbursementDataArray.isEmpty()) {
                 String dateFormat;
                 Locale locale = null;
-                final Map<String, String> dateAndLocale = loan.getDateFormatAndLocale(jsonCommand);
+                final Map<String, String> dateAndLocale = getDateFormatAndLocale(jsonCommand);
                 dateFormat = dateAndLocale.get(LoanApiConstants.dateFormatParameterName);
                 if (dateAndLocale.containsKey(LoanApiConstants.localeParameterName)) {
                     locale = JsonParserHelper.localeFromString(dateAndLocale.get(LoanApiConstants.localeParameterName));
                 }
                 for (JsonElement jsonElement : disbursementDataArray) {
                     final JsonObject jsonObject = jsonElement.getAsJsonObject();
-                    final Map<String, Object> parsedDisbursementData = loan.parseDisbursementDetails(jsonObject, dateFormat, locale);
+                    final Map<String, Object> parsedDisbursementData = parseDisbursementDetails(jsonObject, dateFormat, locale);
                     final LocalDate expectedDisbursementDate = (LocalDate) parsedDisbursementData
                             .get(LoanApiConstants.expectedDisbursementDateParameterName);
                     final BigDecimal principal = (BigDecimal) parsedDisbursementData
@@ -109,22 +122,25 @@ public class LoanDisbursementService {
         }
     }
 
-    public Money adjustDisburseAmount(final Loan loan, @NotNull final JsonCommand command,
-            @NotNull final LocalDate actualDisbursementDate) {
+    public Money adjustDisburseAmount(final Loan loan, @NonNull final JsonCommand command,
+            @NonNull final LocalDate actualDisbursementDate) {
         Money disburseAmount = loan.getLoanRepaymentScheduleDetail().getPrincipal().zero();
         final BigDecimal principalDisbursed = command.bigDecimalValueOfParameterNamed(LoanApiConstants.principalDisbursedParameterName);
         if (loan.getActualDisbursementDate() == null || DateUtils.isBefore(actualDisbursementDate, loan.getActualDisbursementDate())) {
             loan.setActualDisbursementDate(actualDisbursementDate);
         }
         BigDecimal diff = BigDecimal.ZERO;
-        final Collection<LoanDisbursementDetails> details = loan.fetchUndisbursedDetail();
+        final Collection<LoanDisbursementDetails> rawDetails = loan.fetchUndisbursedDetail();
+        final Collection<LoanDisbursementDetails> details = hasMultipleTranchesOnSameDateWithSameExpectedDate(rawDetails,
+                actualDisbursementDate) ? sortDisbursementDetailsByBusinessRules(rawDetails) : rawDetails;
         if (principalDisbursed == null) {
             disburseAmount = loan.getLoanRepaymentScheduleDetail().getPrincipal();
             if (!details.isEmpty()) {
+                // When no specific amount provided, disburse ALL undisbursed tranches for the date
                 disburseAmount = disburseAmount.zero();
                 for (LoanDisbursementDetails disbursementDetails : details) {
                     disbursementDetails.updateActualDisbursementDate(actualDisbursementDate);
-                    disburseAmount = disburseAmount.plus(disbursementDetails.principal());
+                    disburseAmount = disburseAmount.plus(disbursementDetails.getPrincipal());
                 }
             }
         } else {
@@ -137,28 +153,64 @@ public class LoanDisbursementService {
             if (details.isEmpty()) {
                 diff = loan.getLoanRepaymentScheduleDetail().getPrincipal().minus(principalDisbursed).getAmount();
             } else {
-                for (LoanDisbursementDetails disbursementDetails : details) {
-                    disbursementDetails.updateActualDisbursementDate(actualDisbursementDate);
-                    disbursementDetails.updatePrincipal(principalDisbursed);
+                // Check if this is a tranche-based loan (has multiple predefined disbursement details)
+                // versus a non-tranche multi-disbursal loan (creates disbursement details on-the-fly)
+                boolean isTrancheBasedLoan = hasMultipleOrPreDefinedDisbursementDetails(loan, details);
+
+                if (isTrancheBasedLoan && details.size() >= 1) {
+                    // For tranche-based loans, find the matching tranche by amount first, then by order
+                    LoanDisbursementDetails selectedTranche = null;
+
+                    // First try to find a tranche that exactly matches the requested disbursement amount
+                    for (LoanDisbursementDetails disbursementDetails : details) {
+                        if (disbursementDetails.actualDisbursementDate() == null
+                                && disbursementDetails.getPrincipal().compareTo(principalDisbursed) == 0) {
+                            selectedTranche = disbursementDetails;
+                            break;
+                        }
+                    }
+
+                    // If no exact match found, take the first available tranche (next in line)
+                    if (selectedTranche == null) {
+                        for (LoanDisbursementDetails disbursementDetails : details) {
+                            if (disbursementDetails.actualDisbursementDate() == null) {
+                                selectedTranche = disbursementDetails;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (selectedTranche != null) {
+                        // Update the selected tranche with the actual disbursement
+                        selectedTranche.updateActualDisbursementDate(actualDisbursementDate);
+                        selectedTranche.updatePrincipal(principalDisbursed);
+                    }
+                } else {
+                    // For non-tranche multi-disbursal loans: preserve original behavior
+                    // Update all available disbursement details with the actual disbursement date and amount
+                    for (LoanDisbursementDetails disbursementDetails : details) {
+                        disbursementDetails.updateActualDisbursementDate(actualDisbursementDate);
+                        disbursementDetails.updatePrincipal(principalDisbursed);
+                    }
                 }
             }
+            BigDecimal totalAmount = BigDecimal.ZERO;
             if (loan.loanProduct().isMultiDisburseLoan()) {
                 Collection<LoanDisbursementDetails> loanDisburseDetails = loan.getDisbursementDetails();
                 BigDecimal setPrincipalAmount = BigDecimal.ZERO;
-                BigDecimal totalAmount = BigDecimal.ZERO;
                 for (LoanDisbursementDetails disbursementDetails : loanDisburseDetails) {
                     if (disbursementDetails.actualDisbursementDate() != null) {
-                        setPrincipalAmount = setPrincipalAmount.add(disbursementDetails.principal());
+                        setPrincipalAmount = setPrincipalAmount.add(disbursementDetails.getPrincipal());
                     }
-                    totalAmount = totalAmount.add(disbursementDetails.principal());
+                    totalAmount = totalAmount.add(disbursementDetails.getPrincipal());
                 }
                 loan.getLoanRepaymentScheduleDetail().setPrincipal(setPrincipalAmount);
-                loanDisbursementValidator.compareDisbursedToApprovedOrProposedPrincipal(loan, disburseAmount.getAmount(), totalAmount);
             } else {
                 loan.getLoanRepaymentScheduleDetail()
                         .setPrincipal(loan.getLoanRepaymentScheduleDetail().getPrincipal().minus(diff).getAmount());
+                totalAmount = loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount();
             }
-            loanDisbursementValidator.validateDisburseAmountNotExceedingApprovedAmount(loan, diff, principalDisbursed);
+            loanDisbursementValidator.compareDisbursedToApprovedOrProposedPrincipal(loan, totalAmount);
         }
         return disburseAmount;
     }
@@ -183,13 +235,19 @@ public class LoanDisbursementService {
         final Integer installmentNumber = null;
         for (final LoanCharge charge : loan.getActiveCharges()) {
             LocalDate actualDisbursementDate = loan.getActualDisbursementDate(charge);
+
+            boolean isDisbursementCharge = charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
+                    && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid();
+
+            boolean isTrancheDisbursementCharge = charge.getCharge().getChargeTimeType()
+                    .equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue()) && disbursedOn.equals(actualDisbursementDate)
+                    && !charge.isWaived() && !charge.isFullyPaid();
+
             /*
-             * create a Charge applied transaction if Up front Accrual, None or Cash based accounting is enabled
+             * create a Charge applied transaction only when Up front Accrual accounting is enabled. No accrual
+             * transactions should be created for None or Cash based accounting.
              */
-            if ((charge.getCharge().getChargeTimeType().equals(ChargeTimeType.DISBURSEMENT.getValue())
-                    && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())
-                    || (charge.getCharge().getChargeTimeType().equals(ChargeTimeType.TRANCHE_DISBURSEMENT.getValue())
-                            && disbursedOn.equals(actualDisbursementDate) && !charge.isWaived() && !charge.isFullyPaid())) {
+            if (isDisbursementCharge || isTrancheDisbursementCharge) {
                 if (totalFeeChargesDueAtDisbursement.isGreaterThanZero() && !charge.getChargePaymentMode().isPaymentModeAccountTransfer()) {
                     charge.markAsFullyPaid();
                     // Add "Loan Charge Paid By" details to this transaction
@@ -198,9 +256,15 @@ public class LoanDisbursementService {
                     chargesPayment.getLoanChargesPaid().add(loanChargePaidBy);
                     disbursentMoney = disbursentMoney.plus(charge.amount());
                 }
-            } else if (disbursedOn.equals(loan.getActualDisbursementDate())
-                    && loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct()) {
-                loan.handleChargeAppliedTransaction(charge, disbursedOn);
+            } else if (disbursedOn.equals(loan.getActualDisbursementDate()) && (configurationDomainService.isAllowCashAndNonCashAccrual()
+                    ? loan.isNoneOrCashOrUpfrontAccrualAccountingEnabledOnLoanProduct()
+                    : loan.isUpfrontAccrualAccountingEnabledOnLoanProduct())) {
+                final LoanTransaction applyLoanChargeTransaction = loanChargeService.handleChargeAppliedTransaction(loan, charge,
+                        disbursedOn);
+                if (applyLoanChargeTransaction != null) {
+                    loanTransactionRepository.saveAndFlush(applyLoanChargeTransaction);
+                    loanJournalEntryPoster.postJournalEntriesForLoanTransaction(applyLoanChargeTransaction, false, false);
+                }
             }
         }
 
@@ -209,7 +273,9 @@ public class LoanDisbursementService {
             chargesPayment.updateComponentsAndTotal(zero, zero, disbursentMoney, zero);
             chargesPayment.updateLoan(loan);
             loan.addLoanTransaction(chargesPayment);
-            loan.updateLoanOutstandingBalances();
+            loanTransactionRepository.saveAndFlush(chargesPayment);
+            loanJournalEntryPoster.postJournalEntriesForLoanTransaction(chargesPayment, false, false);
+            loanBalanceService.updateLoanOutstandingBalances(loan);
         }
 
         final LocalDate expectedDate = loan.getExpectedFirstRepaymentOnDate();
@@ -240,15 +306,15 @@ public class LoanDisbursementService {
                 if (TemporaryConfigurationServiceContainer.isExternalIdAutoGenerationEnabled()) {
                     externalId = ExternalId.generate();
                 }
-                final LoanCharge loanCharge = new LoanCharge(loan, chargeDefinition, principal, null, null, null, expectedDisbursementDate,
-                        null, null, BigDecimal.ZERO, externalId);
+                final LoanCharge loanCharge = loanChargeService.create(loan, chargeDefinition, principal, null, null, null,
+                        expectedDisbursementDate, null, null, BigDecimal.ZERO, externalId);
                 LoanTrancheDisbursementCharge loanTrancheDisbursementCharge = new LoanTrancheDisbursementCharge(loanCharge,
                         disbursementDetails);
                 loanCharge.updateLoanTrancheDisbursementCharge(loanTrancheDisbursementCharge);
 
                 loanChargeValidator.validateChargeAdditionForDisbursedLoan(loan, loanCharge);
                 loanChargeValidator.validateChargeHasValidSpecifiedDateIfApplicable(loan, loanCharge, loan.getDisbursementDate());
-                loan.addLoanCharge(loanCharge);
+                loanChargeService.addLoanCharge(loan, loanCharge);
             }
             actualChanges.put(LoanApiConstants.disbursementDataParameterName, expectedDisbursementDate + "-" + principal);
             actualChanges.put(RECALCULATE_LOAN_SCHEDULE, true);
@@ -263,17 +329,17 @@ public class LoanDisbursementService {
             for (LoanCharge loanCharge : tempCharges) {
                 loanChargeValidator.validateLoanIsNotClosed(loan, loanCharge);
                 loanChargeValidator.validateLoanChargeIsNotWaived(loan, loanCharge);
-                reprocessLoanTransactionsService.removeLoanCharge(loan, loanCharge);
+                loanChargeService.removeLoanCharge(loan, loanCharge);
             }
             loan.getTrancheCharges().clear();
         } else {
             if (!loanChargeIds.isEmpty() && loanChargeIds.size() != chargeIdLength) {
                 for (Long chargeId : loanChargeIds) {
-                    final LoanCharge deleteCharge = loan.fetchLoanChargesById(chargeId);
+                    final LoanCharge deleteCharge = loanChargeService.fetchLoanChargesById(loan, chargeId);
                     if (loan.getCharges().contains(deleteCharge)) {
                         loanChargeValidator.validateLoanIsNotClosed(loan, deleteCharge);
                         loanChargeValidator.validateLoanChargeIsNotWaived(loan, deleteCharge);
-                        reprocessLoanTransactionsService.removeLoanCharge(loan, deleteCharge);
+                        loanChargeService.removeLoanCharge(loan, deleteCharge);
                     }
                 }
             }
@@ -296,6 +362,126 @@ public class LoanDisbursementService {
                     loanChargeValidator.validateLoanChargeIsNotWaived(loan, charge); //
                     return true; //
                 }) //
-                .forEach(loanCharge -> reprocessLoanTransactionsService.removeLoanCharge(loan, loanCharge));
+                .forEach(loanCharge -> loanChargeService.removeLoanCharge(loan, loanCharge));
     }
+
+    // This method returns date format and locale if present in the JsonCommand
+    private Map<String, String> getDateFormatAndLocale(final JsonCommand jsonCommand) {
+        Map<String, String> returnObject = new HashMap<>();
+        JsonElement jsonElement = jsonCommand.parsedJson();
+        if (jsonElement.isJsonObject()) {
+            JsonObject topLevel = jsonElement.getAsJsonObject();
+            if (topLevel.has(LoanApiConstants.dateFormatParameterName)
+                    && topLevel.get(LoanApiConstants.dateFormatParameterName).isJsonPrimitive()) {
+                final JsonPrimitive primitive = topLevel.get(LoanApiConstants.dateFormatParameterName).getAsJsonPrimitive();
+                returnObject.put(LoanApiConstants.dateFormatParameterName, primitive.getAsString());
+            }
+            if (topLevel.has(LoanApiConstants.localeParameterName)
+                    && topLevel.get(LoanApiConstants.localeParameterName).isJsonPrimitive()) {
+                final JsonPrimitive primitive = topLevel.get(LoanApiConstants.localeParameterName).getAsJsonPrimitive();
+                String localeString = primitive.getAsString();
+                returnObject.put(LoanApiConstants.localeParameterName, localeString);
+            }
+        }
+        return returnObject;
+    }
+
+    private Map<String, Object> parseDisbursementDetails(final JsonObject jsonObject, String dateFormat, Locale locale) {
+        Map<String, Object> returnObject = new HashMap<>();
+        if (jsonObject.get(LoanApiConstants.expectedDisbursementDateParameterName) != null
+                && jsonObject.get(LoanApiConstants.expectedDisbursementDateParameterName).isJsonPrimitive()) {
+            final JsonPrimitive primitive = jsonObject.get(LoanApiConstants.expectedDisbursementDateParameterName).getAsJsonPrimitive();
+            final String valueAsString = primitive.getAsString();
+            if (StringUtils.isNotBlank(valueAsString)) {
+                LocalDate date = JsonParserHelper.convertFrom(valueAsString, LoanApiConstants.expectedDisbursementDateParameterName,
+                        dateFormat, locale);
+                if (date != null) {
+                    returnObject.put(LoanApiConstants.expectedDisbursementDateParameterName, date);
+                }
+            }
+        }
+
+        if (jsonObject.get(LoanApiConstants.disbursementPrincipalParameterName).isJsonPrimitive()
+                && StringUtils.isNotBlank(jsonObject.get(LoanApiConstants.disbursementPrincipalParameterName).getAsString())) {
+            BigDecimal principal = jsonObject.getAsJsonPrimitive(LoanApiConstants.disbursementPrincipalParameterName).getAsBigDecimal();
+            returnObject.put(LoanApiConstants.disbursementPrincipalParameterName, principal);
+        }
+
+        if (jsonObject.has(LoanApiConstants.disbursementIdParameterName)
+                && jsonObject.get(LoanApiConstants.disbursementIdParameterName).isJsonPrimitive()
+                && StringUtils.isNotBlank(jsonObject.get(LoanApiConstants.disbursementIdParameterName).getAsString())) {
+            Long id = jsonObject.getAsJsonPrimitive(LoanApiConstants.disbursementIdParameterName).getAsLong();
+            returnObject.put(LoanApiConstants.disbursementIdParameterName, id);
+        }
+
+        if (jsonObject.has(LoanApiConstants.loanChargeIdParameterName)
+                && jsonObject.get(LoanApiConstants.loanChargeIdParameterName).isJsonPrimitive()
+                && StringUtils.isNotBlank(jsonObject.get(LoanApiConstants.loanChargeIdParameterName).getAsString())) {
+            returnObject.put(LoanApiConstants.loanChargeIdParameterName,
+                    jsonObject.getAsJsonPrimitive(LoanApiConstants.loanChargeIdParameterName).getAsString());
+        }
+        return returnObject;
+    }
+
+    private boolean hasMultipleOrPreDefinedDisbursementDetails(final Loan loan,
+            final Collection<LoanDisbursementDetails> undisbursedDetails) {
+        Collection<LoanDisbursementDetails> allDisbursementDetails = loan.getDisbursementDetails();
+
+        if (undisbursedDetails.size() > 1) {
+            return true;
+        }
+
+        if (allDisbursementDetails.size() > 1 && !undisbursedDetails.isEmpty()) {
+            return true;
+        }
+
+        if (undisbursedDetails.size() == 1) {
+            LoanDisbursementDetails singleDetail = undisbursedDetails.iterator().next();
+            BigDecimal loanPrincipal = loan.getLoanRepaymentScheduleDetail().getPrincipal().getAmount();
+
+            if (singleDetail.getPrincipal().compareTo(loanPrincipal) == 0) {
+                return false;
+            }
+        }
+
+        // Default to tranche behavior for safety in ambiguous cases
+        return true;
+    }
+
+    public static List<LoanDisbursementDetails> sortDisbursementDetailsByBusinessRules(
+            Collection<LoanDisbursementDetails> disbursementDetails) {
+        if (disbursementDetails == null || disbursementDetails.isEmpty()) {
+            return List.of();
+        }
+
+        return disbursementDetails.stream()
+                .sorted(Comparator.comparing(LoanDisbursementDetails::expectedDisbursementDate)
+                        .thenComparing(
+                                (LoanDisbursementDetails d1, LoanDisbursementDetails d2) -> d2.getPrincipal().compareTo(d1.getPrincipal()))
+                        .thenComparing(LoanDisbursementDetails::getId))
+                .collect(Collectors.toList());
+    }
+
+    public static boolean hasMultipleTranchesOnSameDate(Collection<LoanDisbursementDetails> disbursementDetails) {
+        if (disbursementDetails == null || disbursementDetails.size() <= 1) {
+            return false;
+        }
+
+        return disbursementDetails.stream()
+                .collect(Collectors.groupingBy(LoanDisbursementDetails::expectedDisbursementDate, Collectors.counting())).values().stream()
+                .anyMatch(count -> count > 1);
+    }
+
+    public static boolean hasMultipleTranchesOnSameDateWithSameExpectedDate(Collection<LoanDisbursementDetails> disbursementDetails,
+            LocalDate actualDisbursementDate) {
+        if (disbursementDetails == null || disbursementDetails.size() <= 1 || actualDisbursementDate == null) {
+            return false;
+        }
+
+        long tranchesForActualDate = disbursementDetails.stream()
+                .filter(detail -> actualDisbursementDate.equals(detail.expectedDisbursementDate())).count();
+
+        return tranchesForActualDate > 1;
+    }
+
 }

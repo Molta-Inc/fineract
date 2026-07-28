@@ -67,20 +67,20 @@ public class ExternalEventConfigurationValidationServiceTest {
 
         // given
         List<String> configurations = Arrays.asList("CentersCreateBusinessEvent", "ClientActivateBusinessEvent",
-                "ClientCreateBusinessEvent", "ClientRejectBusinessEvent", "FixedDepositAccountCreateBusinessEvent",
-                "GroupsCreateBusinessEvent", "LoanAcceptTransferBusinessEvent", "LoanAddChargeBusinessEvent",
-                "LoanAdjustTransactionBusinessEvent", "LoanApplyOverdueChargeBusinessEvent", "LoanApprovedBusinessEvent",
-                "LoanBalanceChangedBusinessEvent", "LoanChargebackTransactionBusinessEvent", "LoanChargePaymentPostBusinessEvent",
-                "LoanChargePaymentPreBusinessEvent", "LoanChargeRefundBusinessEvent", "LoanCloseAsRescheduleBusinessEvent",
-                "LoanCloseBusinessEvent", "LoanCreatedBusinessEvent", "LoanCreditBalanceRefundPostBusinessEvent",
-                "LoanCreditBalanceRefundPreBusinessEvent", "LoanDeleteChargeBusinessEvent", "LoanDisbursalBusinessEvent",
-                "LoanDisbursalTransactionBusinessEvent", "LoanForeClosurePostBusinessEvent", "LoanForeClosurePreBusinessEvent",
-                "LoanInitiateTransferBusinessEvent", "LoanInterestRecalculationBusinessEvent", "LoanProductCreateBusinessEvent",
-                "LoanReassignOfficerBusinessEvent", "LoanRefundPostBusinessEvent", "LoanRefundPreBusinessEvent",
-                "LoanRejectedBusinessEvent", "LoanRejectTransferBusinessEvent", "LoanRemoveOfficerBusinessEvent",
-                "LoanRepaymentDueBusinessEvent", "LoanRepaymentOverdueBusinessEvent", "LoanRescheduledDueCalendarChangeBusinessEvent",
-                "LoanRescheduledDueHolidayBusinessEvent", "LoanScheduleVariationsAddedBusinessEvent",
-                "LoanScheduleVariationsDeletedBusinessEvent", "LoanStatusChangedBusinessEvent",
+                "ClientCreateBusinessEvent", "ClientRejectBusinessEvent", "DocumentCreatedBusinessEvent", "DocumentDeletedBusinessEvent",
+                "FixedDepositAccountCreateBusinessEvent", "GroupsCreateBusinessEvent", "LoanAcceptTransferBusinessEvent",
+                "LoanAddChargeBusinessEvent", "LoanAdjustTransactionBusinessEvent", "LoanApplicationModifiedBusinessEvent",
+                "LoanApplyOverdueChargeBusinessEvent", "LoanApprovedBusinessEvent", "LoanBalanceChangedBusinessEvent",
+                "LoanChargebackTransactionBusinessEvent", "LoanChargePaymentPostBusinessEvent", "LoanChargePaymentPreBusinessEvent",
+                "LoanChargeRefundBusinessEvent", "LoanCloseAsRescheduleBusinessEvent", "LoanCloseBusinessEvent", "LoanCreatedBusinessEvent",
+                "LoanCreditBalanceRefundPostBusinessEvent", "LoanCreditBalanceRefundPreBusinessEvent", "LoanDeleteChargeBusinessEvent",
+                "LoanDisbursalBusinessEvent", "LoanDisbursalTransactionBusinessEvent", "LoanForeClosurePostBusinessEvent",
+                "LoanForeClosurePreBusinessEvent", "LoanInitiateTransferBusinessEvent", "LoanInterestRecalculationBusinessEvent",
+                "LoanProductCreateBusinessEvent", "LoanReassignOfficerBusinessEvent", "LoanRefundPostBusinessEvent",
+                "LoanRefundPreBusinessEvent", "LoanRejectedBusinessEvent", "LoanRejectTransferBusinessEvent",
+                "LoanRemoveOfficerBusinessEvent", "LoanRepaymentDueBusinessEvent", "LoanRepaymentOverdueBusinessEvent",
+                "LoanRescheduledDueCalendarChangeBusinessEvent", "LoanRescheduledDueHolidayBusinessEvent",
+                "LoanScheduleVariationsAddedBusinessEvent", "LoanScheduleVariationsDeletedBusinessEvent", "LoanStatusChangedBusinessEvent",
                 "LoanTransactionGoodwillCreditPostBusinessEvent", "LoanTransactionGoodwillCreditPreBusinessEvent",
                 "LoanTransactionMakeRepaymentPostBusinessEvent", "LoanTransactionMakeRepaymentPreBusinessEvent",
                 "LoanTransactionMerchantIssuedRefundPostBusinessEvent", "LoanTransactionMerchantIssuedRefundPreBusinessEvent",
@@ -89,9 +89,9 @@ public class ExternalEventConfigurationValidationServiceTest {
                 "LoanUndoApprovalBusinessEvent", "LoanUndoDisbursalBusinessEvent", "LoanUndoLastDisbursalBusinessEvent",
                 "LoanUndoWrittenOffBusinessEvent", "LoanUpdateChargeBusinessEvent", "LoanUpdateDisbursementDataBusinessEvent",
                 "LoanWaiveChargeBusinessEvent", "LoanWaiveChargeUndoBusinessEvent", "LoanWaiveInterestBusinessEvent",
-                "LoanWithdrawTransferBusinessEvent", "LoanWrittenOffPostBusinessEvent", "LoanWrittenOffPreBusinessEvent",
-                "RecurringDepositAccountCreateBusinessEvent", "SavingsActivateBusinessEvent", "SavingsApproveBusinessEvent",
-                "SavingsCloseBusinessEvent", "SavingsCreateBusinessEvent", "SavingsDepositBusinessEvent",
+                "LoanWithdrawnByApplicantBusinessEvent", "LoanWithdrawTransferBusinessEvent", "LoanWrittenOffPostBusinessEvent",
+                "LoanWrittenOffPreBusinessEvent", "RecurringDepositAccountCreateBusinessEvent", "SavingsActivateBusinessEvent",
+                "SavingsApproveBusinessEvent", "SavingsCloseBusinessEvent", "SavingsCreateBusinessEvent", "SavingsDepositBusinessEvent",
                 "SavingsPostInterestBusinessEvent", "SavingsRejectBusinessEvent", "SavingsWithdrawalBusinessEvent",
                 "ShareAccountApproveBusinessEvent", "ShareAccountCreateBusinessEvent", "ShareProductDividentsCreateBusinessEvent",
                 "LoanChargeAdjustmentPostBusinessEvent", "LoanChargeAdjustmentPreBusinessEvent", "LoanDelinquencyRangeChangeBusinessEvent",
@@ -105,7 +105,19 @@ public class ExternalEventConfigurationValidationServiceTest {
                 "LoanReAmortizeBusinessEvent", "LoanUndoReAmortizeBusinessEvent", "LoanTransactionInterestPaymentWaiverPreBusinessEvent",
                 "LoanTransactionInterestPaymentWaiverPostBusinessEvent", "LoanTransactionAccrualActivityPostBusinessEvent",
                 "LoanTransactionAccrualActivityPreBusinessEvent", "LoanTransactionInterestRefundPostBusinessEvent",
-                "LoanTransactionInterestRefundPreBusinessEvent", "LoanAccrualAdjustmentTransactionBusinessEvent");
+                "LoanTransactionInterestRefundPreBusinessEvent", "LoanAccrualAdjustmentTransactionBusinessEvent",
+                "LoanCapitalizedIncomeAmortizationTransactionCreatedBusinessEvent",
+                "LoanCapitalizedIncomeAdjustmentTransactionCreatedBusinessEvent", "LoanTransactionContractTerminationPostBusinessEvent",
+                "LoanCapitalizedIncomeAmortizationAdjustmentTransactionCreatedBusinessEvent",
+                "LoanCapitalizedIncomeTransactionCreatedBusinessEvent", "LoanUndoContractTerminationBusinessEvent",
+                "LoanBuyDownFeeTransactionCreatedBusinessEvent", "LoanBuyDownFeeAdjustmentTransactionCreatedBusinessEvent",
+                "LoanBuyDownFeeAmortizationTransactionCreatedBusinessEvent",
+                "LoanBuyDownFeeAmortizationAdjustmentTransactionCreatedBusinessEvent", "LoanApprovedAmountChangedBusinessEvent",
+                "SavingsAccountsStayedLockedBusinessEvent", "SavingsAccountForceWithdrawalBusinessEvent",
+                "WorkingCapitalLoanDisbursalTransactionBusinessEvent", "WorkingCapitalLoanUndoDisbursalTransactionBusinessEvent",
+                "WorkingCapitalLoanRepaymentTransactionBusinessEvent", "WorkingCapitalLoanDiscountFeeTransactionBusinessEvent",
+                "WorkingCapitalLoanDiscountFeeAdjustmentTransactionBusinessEvent", "WorkingCapitalLoanChargeAdjustmentPreBusinessEvent",
+                "WorkingCapitalLoanChargeAdjustmentPostBusinessEvent", "WorkingCapitalLoanCreditBalanceRefundTransactionBusinessEvent");
 
         List<FineractPlatformTenant> tenants = Arrays
                 .asList(new FineractPlatformTenant(1L, "default", "Default Tenant", "Europe/Budapest", null));
@@ -141,7 +153,8 @@ public class ExternalEventConfigurationValidationServiceTest {
                 () -> underTest.afterPropertiesSet());
 
         // then
-        String expectedMessage = "No external events configured";
+        String expectedMessage = "Configuration not found for external event LoanAccountsStayedLockedBusinessEvent";
+
         String actualMessage = exceptionThrown.getMessage();
 
         assertTrue(actualMessage.contains(expectedMessage));
@@ -153,20 +166,21 @@ public class ExternalEventConfigurationValidationServiceTest {
 
         // given
         List<String> configurationWithMissingCentersCreateBusinessEvent = Arrays.asList("MockBusinessEvent", "MockBusinessEvent",
-                "ClientActivateBusinessEvent", "ClientCreateBusinessEvent", "ClientRejectBusinessEvent",
-                "FixedDepositAccountCreateBusinessEvent", "GroupsCreateBusinessEvent", "LoanAcceptTransferBusinessEvent",
-                "LoanAddChargeBusinessEvent", "LoanAdjustTransactionBusinessEvent", "LoanApplyOverdueChargeBusinessEvent",
-                "LoanApprovedBusinessEvent", "LoanBalanceChangedBusinessEvent", "LoanChargebackTransactionBusinessEvent",
-                "LoanChargePaymentPostBusinessEvent", "LoanChargePaymentPreBusinessEvent", "LoanChargeRefundBusinessEvent",
-                "LoanCloseAsRescheduleBusinessEvent", "LoanCloseBusinessEvent", "LoanCreatedBusinessEvent",
-                "LoanCreditBalanceRefundPostBusinessEvent", "LoanCreditBalanceRefundPreBusinessEvent", "LoanDeleteChargeBusinessEvent",
-                "LoanDisbursalBusinessEvent", "LoanDisbursalTransactionBusinessEvent", "LoanForeClosurePostBusinessEvent",
-                "LoanForeClosurePreBusinessEvent", "LoanInitiateTransferBusinessEvent", "LoanInterestRecalculationBusinessEvent",
-                "LoanProductCreateBusinessEvent", "LoanReassignOfficerBusinessEvent", "LoanRefundPostBusinessEvent",
-                "LoanRefundPreBusinessEvent", "LoanRejectedBusinessEvent", "LoanRejectTransferBusinessEvent",
-                "LoanRemoveOfficerBusinessEvent", "LoanRepaymentDueBusinessEvent", "LoanRepaymentOverdueBusinessEvent",
-                "LoanRescheduledDueCalendarChangeBusinessEvent", "LoanRescheduledDueHolidayBusinessEvent",
-                "LoanScheduleVariationsAddedBusinessEvent", "LoanScheduleVariationsDeletedBusinessEvent", "LoanStatusChangedBusinessEvent",
+                "ClientActivateBusinessEvent", "ClientCreateBusinessEvent", "ClientRejectBusinessEvent", "DocumentCreatedBusinessEvent",
+                "DocumentDeletedBusinessEvent", "FixedDepositAccountCreateBusinessEvent", "GroupsCreateBusinessEvent",
+                "LoanAcceptTransferBusinessEvent", "LoanAddChargeBusinessEvent", "LoanAdjustTransactionBusinessEvent",
+                "LoanApplicationModifiedBusinessEvent", "LoanApplyOverdueChargeBusinessEvent", "LoanApprovedBusinessEvent",
+                "LoanBalanceChangedBusinessEvent", "LoanChargebackTransactionBusinessEvent", "LoanChargePaymentPostBusinessEvent",
+                "LoanChargePaymentPreBusinessEvent", "LoanChargeRefundBusinessEvent", "LoanCloseAsRescheduleBusinessEvent",
+                "LoanCloseBusinessEvent", "LoanCreatedBusinessEvent", "LoanCreditBalanceRefundPostBusinessEvent",
+                "LoanCreditBalanceRefundPreBusinessEvent", "LoanDeleteChargeBusinessEvent", "LoanDisbursalBusinessEvent",
+                "LoanDisbursalTransactionBusinessEvent", "LoanForeClosurePostBusinessEvent", "LoanForeClosurePreBusinessEvent",
+                "LoanInitiateTransferBusinessEvent", "LoanInterestRecalculationBusinessEvent", "LoanProductCreateBusinessEvent",
+                "LoanReassignOfficerBusinessEvent", "LoanRefundPostBusinessEvent", "LoanRefundPreBusinessEvent",
+                "LoanRejectedBusinessEvent", "LoanRejectTransferBusinessEvent", "LoanRemoveOfficerBusinessEvent",
+                "LoanRepaymentDueBusinessEvent", "LoanRepaymentOverdueBusinessEvent", "LoanRescheduledDueCalendarChangeBusinessEvent",
+                "LoanRescheduledDueHolidayBusinessEvent", "LoanScheduleVariationsAddedBusinessEvent",
+                "LoanScheduleVariationsDeletedBusinessEvent", "LoanStatusChangedBusinessEvent",
                 "LoanTransactionGoodwillCreditPostBusinessEvent", "LoanTransactionGoodwillCreditPreBusinessEvent",
                 "LoanTransactionMakeRepaymentPostBusinessEvent", "LoanTransactionMakeRepaymentPreBusinessEvent",
                 "LoanTransactionMerchantIssuedRefundPostBusinessEvent", "LoanTransactionMerchantIssuedRefundPreBusinessEvent",
@@ -175,9 +189,9 @@ public class ExternalEventConfigurationValidationServiceTest {
                 "LoanUndoApprovalBusinessEvent", "LoanUndoDisbursalBusinessEvent", "LoanUndoLastDisbursalBusinessEvent",
                 "LoanUndoWrittenOffBusinessEvent", "LoanUpdateChargeBusinessEvent", "LoanUpdateDisbursementDataBusinessEvent",
                 "LoanWaiveChargeBusinessEvent", "LoanWaiveChargeUndoBusinessEvent", "LoanWaiveInterestBusinessEvent",
-                "LoanWithdrawTransferBusinessEvent", "LoanWrittenOffPostBusinessEvent", "LoanWrittenOffPreBusinessEvent",
-                "RecurringDepositAccountCreateBusinessEvent", "SavingsActivateBusinessEvent", "SavingsApproveBusinessEvent",
-                "SavingsCloseBusinessEvent", "SavingsCreateBusinessEvent", "SavingsDepositBusinessEvent",
+                "LoanWithdrawnByApplicantBusinessEvent", "LoanWithdrawTransferBusinessEvent", "LoanWrittenOffPostBusinessEvent",
+                "LoanWrittenOffPreBusinessEvent", "RecurringDepositAccountCreateBusinessEvent", "SavingsActivateBusinessEvent",
+                "SavingsApproveBusinessEvent", "SavingsCloseBusinessEvent", "SavingsCreateBusinessEvent", "SavingsDepositBusinessEvent",
                 "SavingsPostInterestBusinessEvent", "SavingsRejectBusinessEvent", "SavingsWithdrawalBusinessEvent",
                 "ShareAccountApproveBusinessEvent", "ShareAccountCreateBusinessEvent", "ShareProductDividentsCreateBusinessEvent",
                 "LoanChargeAdjustmentPostBusinessEvent", "LoanChargeAdjustmentPreBusinessEvent", "LoanDelinquencyRangeChangeBusinessEvent",
@@ -191,7 +205,17 @@ public class ExternalEventConfigurationValidationServiceTest {
                 "LoanReAmortizeBusinessEvent", "LoanUndoReAmortizeBusinessEvent", "LoanTransactionInterestPaymentWaiverPreBusinessEvent",
                 "LoanTransactionInterestPaymentWaiverPostBusinessEvent", "LoanTransactionAccrualActivityPostBusinessEvent",
                 "LoanTransactionAccrualActivityPreBusinessEvent", "LoanTransactionInterestRefundPostBusinessEvent",
-                "LoanTransactionInterestRefundPreBusinessEvent", "LoanAccrualAdjustmentTransactionBusinessEvent");
+                "LoanTransactionInterestRefundPreBusinessEvent", "LoanAccrualAdjustmentTransactionBusinessEvent",
+                "LoanCapitalizedIncomeAmortizationTransactionCreatedBusinessEvent",
+                "LoanCapitalizedIncomeAdjustmentTransactionCreatedBusinessEvent", "LoanTransactionContractTerminationPostBusinessEvent",
+                "LoanCapitalizedIncomeAmortizationAdjustmentTransactionCreatedBusinessEvent",
+                "LoanCapitalizedIncomeTransactionCreatedBusinessEvent", "LoanUndoContractTerminationBusinessEvent",
+                "LoanBuyDownFeeTransactionCreatedBusinessEvent", "LoanBuyDownFeeAdjustmentTransactionCreatedBusinessEvent",
+                "LoanBuyDownFeeAmortizationTransactionCreatedBusinessEvent",
+                "LoanBuyDownFeeAmortizationAdjustmentTransactionCreatedBusinessEvent", "LoanApprovedAmountChangedBusinessEvent",
+                "SavingsAccountsStayedLockedBusinessEvent", "SavingsAccountForceWithdrawalBusinessEvent",
+                "WorkingCapitalLoanDisbursalTransactionBusinessEvent", "WorkingCapitalLoanUndoDisbursalTransactionBusinessEvent",
+                "WorkingCapitalLoanRepaymentTransactionBusinessEvent", "WorkingCapitalLoanCreditBalanceRefundTransactionBusinessEvent");
 
         List<FineractPlatformTenant> tenants = Arrays
                 .asList(new FineractPlatformTenant(1L, "default", "Default Tenant", "Europe/Budapest", null));

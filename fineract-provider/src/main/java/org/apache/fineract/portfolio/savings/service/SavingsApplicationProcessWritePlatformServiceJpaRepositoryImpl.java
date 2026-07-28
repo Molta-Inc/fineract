@@ -168,7 +168,9 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
 
                     Group group = this.groupRepositoryWrapper.findOneWithNotFoundDetection(groupId);
 
-                    if (command.booleanObjectValueOfParameterNamed("isParentAccount") != null) {
+                    if (command.booleanObjectValueOfParameterNamed("isParentAccount") != null
+                            && ("1".equals(command.stringValueOfParameterNamed("isParentAccount"))
+                                    || command.booleanObjectValueOfParameterNamed("isParentAccount"))) {
                         // empty table check
                         if (gsimRepository.count() != 0) {
                             // Parent-Not an empty table
@@ -193,7 +195,12 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
                     } else {
                         if (gsimRepository.count() != 0) {
                             // Child-Not an empty table check
-                            gsimAccount = gsimRepository.findOneByIsAcceptingChildAndApplicationId(true, applicationId);
+                            if (applicationId.compareTo(BigDecimal.ZERO) == 0) {
+                                gsimAccount = gsimRepository.findOneByIsAcceptingChildAndApplicationIdAndGroupId(true, applicationId,
+                                        groupId);
+                            } else {
+                                gsimAccount = gsimRepository.findOneByIsAcceptingChildAndApplicationId(true, applicationId);
+                            }
                             accountNumber = gsimAccount.getAccountNumber() + (gsimAccount.getChildAccountsCount() + 1);
                             account.updateAccountNo(accountNumber);
                             this.gsimWritePlatformService.incrementChildAccountCount(gsimAccount);
@@ -241,7 +248,8 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
                     .withClientId(account.clientId()) //
                     .withGroupId(account.groupId()) //
                     .withSavingsId(savingsId) //
-                    .withGsimId(gsimAccount == null ? 0 : gsimAccount.getId()).build();
+                    .withGsimId(gsimAccount == null ? 0 : gsimAccount.getId()) //
+                    .build();
         } catch (final DataAccessException dve) {
             handleDataIntegrityIssues(command, dve.getMostSpecificCause(), dve);
             return CommandProcessingResult.empty();
@@ -393,9 +401,7 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
             }
         }
 
-        final List<Note> relatedNotes = this.noteRepository.findBySavingsAccount(account);
-        this.noteRepository.deleteAllInBatch(relatedNotes);
-
+        this.noteRepository.deleteAllBySavingsAccount(account);
         this.savingAccountRepository.delete(account);
 
         return new CommandProcessingResultBuilder() //
@@ -675,7 +681,7 @@ public class SavingsApplicationProcessWritePlatformServiceJpaRepositoryImpl impl
 
         return new CommandProcessingResultBuilder() //
                 .withSavingsId(account.getId()) //
-                .setRollbackTransaction(rollbackTransaction)//
+                .setRollbackTransaction(rollbackTransaction) //
                 .build();
     }
 

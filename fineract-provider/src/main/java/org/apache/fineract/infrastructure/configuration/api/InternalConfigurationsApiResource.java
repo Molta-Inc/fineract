@@ -19,6 +19,7 @@
 package org.apache.fineract.infrastructure.configuration.api;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
@@ -30,8 +31,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.configuration.domain.GlobalConfigurationProperty;
 import org.apache.fineract.infrastructure.configuration.domain.GlobalConfigurationRepositoryWrapper;
+import org.apache.fineract.infrastructure.configuration.service.MoneyHelperInitializationService;
+import org.apache.fineract.infrastructure.core.annotation.AlternativeOperationId;
 import org.apache.fineract.infrastructure.core.boot.FineractProfiles;
-import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
+import org.apache.fineract.infrastructure.core.domain.FineractPlatformTenant;
+import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -44,6 +48,7 @@ import org.springframework.stereotype.Component;
 public class InternalConfigurationsApiResource implements InitializingBean {
 
     private final GlobalConfigurationRepositoryWrapper repository;
+    private final MoneyHelperInitializationService moneyHelperInitializationService;
 
     @Override
     @SuppressFBWarnings("SLF4J_SIGN_ONLY_FORMAT")
@@ -62,6 +67,8 @@ public class InternalConfigurationsApiResource implements InitializingBean {
     @Path("name/{configName}/value/{configValue}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Update internal global configuration", operationId = "updateInternalGlobalConfiguration")
+    @AlternativeOperationId("updateGlobalConfiguration")
     @SuppressFBWarnings("SLF4J_SIGN_ONLY_FORMAT")
     public Response updateGlobalConfiguration(@PathParam("configName") String configName, @PathParam("configValue") Long configValue) {
         log.warn("------------------------------------------------------------");
@@ -75,7 +82,14 @@ public class InternalConfigurationsApiResource implements InitializingBean {
         repository.save(config);
         log.warn("Config {} updated to {}", config.getName(), config.getValue());
         repository.removeFromCache(config.getName());
-        MoneyHelper.fetchRoundingModeFromGlobalConfig();
+
+        // Update MoneyHelper when rounding mode configuration changes
+        if (GlobalConfigurationConstants.ROUNDING_MODE.equals(configName) && configValue != null) {
+            FineractPlatformTenant currentTenant = ThreadLocalContextUtil.getTenant();
+            if (currentTenant != null) {
+                moneyHelperInitializationService.initializeTenantRoundingMode(currentTenant);
+            }
+        }
 
         return Response.status(Response.Status.OK).build();
     }

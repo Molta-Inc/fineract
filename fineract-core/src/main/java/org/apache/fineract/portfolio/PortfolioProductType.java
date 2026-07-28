@@ -18,10 +18,17 @@
  */
 package org.apache.fineract.portfolio;
 
+import lombok.Getter;
+
+@Getter
 public enum PortfolioProductType {
 
-    LOAN(1, "productType.loan"), SAVING(2, "productType.saving"), CLIENT(5, "productType.client"), PROVISIONING(3,
-            "productType.provisioning"), SHARES(4, "productType.shares");
+    LOAN(1, "productType.loan"), //
+    SAVING(2, "productType.saving"), //
+    CLIENT(5, "productType.client"), //
+    PROVISIONING(3, "productType.provisioning"), //
+    SHARES(4, "productType.shares"), //
+    WORKING_CAPITAL_LOAN(6, "productType.workingCapitalLoan"); //
 
     private final Integer value;
     private final String code;
@@ -33,15 +40,7 @@ public enum PortfolioProductType {
 
     @Override
     public String toString() {
-        return name().toString().replaceAll("_", " ");
-    }
-
-    public Integer getValue() {
-        return this.value;
-    }
-
-    public String getCode() {
-        return this.code;
+        return name().replace("_", " ");
     }
 
     public static PortfolioProductType fromInt(final Integer v) {
@@ -49,20 +48,15 @@ public enum PortfolioProductType {
             return null;
         }
 
-        switch (v) {
-            case 1:
-                return LOAN;
-            case 2:
-                return SAVING;
-            case 3:
-                return CLIENT;
-            case 4:
-                return PROVISIONING;
-            case 5:
-                return SHARES;
-            default:
-                return null;
-        }
+        return switch (v) {
+            case 1 -> LOAN;
+            case 2 -> SAVING;
+            case 3 -> CLIENT;
+            case 4 -> PROVISIONING;
+            case 5 -> SHARES;
+            case 6 -> WORKING_CAPITAL_LOAN;
+            default -> null;
+        };
     }
 
     public boolean isSavingProduct() {
@@ -79,6 +73,10 @@ public enum PortfolioProductType {
 
     public boolean isShareProduct() {
         return this.equals(SHARES);
+    }
+
+    public boolean isWorkingCapitalLoanProduct() {
+        return this.equals(WORKING_CAPITAL_LOAN);
     }
 
 }

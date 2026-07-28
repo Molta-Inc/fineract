@@ -18,79 +18,129 @@
  */
 package org.apache.fineract.integrationtests.common;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.apache.fineract.client.feign.util.FeignCalls.executeVoid;
+import static org.apache.fineract.client.feign.util.FeignCalls.ok;
 
-import com.google.gson.Gson;
-import io.restassured.specification.RequestSpecification;
-import io.restassured.specification.ResponseSpecification;
-import java.util.HashMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.fineract.client.models.QuestionData;
+import org.apache.fineract.client.models.ResponseData;
+import org.apache.fineract.client.models.SurveyData;
 
-public final class SurveyHelper {
+@Slf4j
+public class SurveyHelper {
 
-    private SurveyHelper() {
+    private static final int DEFAULT_VALIDITY_YEARS = 100;
+    private static final String SURVEY_KEY_PREFIX = "SURVEY_";
+    private static final String QUESTION_KEY_PREFIX = "Q";
+    private static final String QUESTION_DESC_PREFIX = "Question ";
+    private static final String YES_RESPONSE = "Yes";
+    private static final String NO_RESPONSE = "No";
+    private static final String ACTIVATE_COMMAND = "activate";
+    private static final String DEACTIVATE_COMMAND = "deactivate";
 
+    public Long createSurvey(String name, String description, LocalDate validFrom, LocalDate validTo, List<String> questions) {
+        validateSurveyInputs(name, description, questions);
+        SurveyData surveyData = buildSurveyData(name, description, validFrom, validTo, questions);
+        executeVoid(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().createSurvey(surveyData));
+        log.info("Survey created successfully: {}", name);
+        return null;
     }
 
-    private static final Logger LOG = LoggerFactory.getLogger(SurveyHelper.class);
-    private static final String FULFIL_SURVEY_URL = "/fineract-provider/api/v1/survey/ppi_kenya_2009/clientId?" + Utils.TENANT_IDENTIFIER;
-
-    // TODO: Rewrite to use fineract-client instead!
-    // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
-    // org.apache.fineract.client.models.PostLoansLoanIdRequest)
-    @Deprecated(forRemoval = true)
-    public static Integer fulfilSurvey(final RequestSpecification requestSpec, final ResponseSpecification responseSpec) {
-        return fulfilSurvey(requestSpec, responseSpec, "04 March 2011");
+    public Long createSurvey(String name, String description, List<String> questions) {
+        LocalDate validFrom = Utils.getLocalDateOfTenant();
+        LocalDate validTo = validFrom.plusYears(DEFAULT_VALIDITY_YEARS);
+        return createSurvey(name, description, validFrom, validTo, questions);
     }
 
-    // TODO: Rewrite to use fineract-client instead!
-    // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
-    // org.apache.fineract.client.models.PostLoansLoanIdRequest)
-    @Deprecated(forRemoval = true)
-    public static Integer fulfilSurvey(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
-            final String activationDate) {
-        LOG.info("---------------------------------FULFIL PPI ---------------------------------------------");
-        return Utils.performServerPost(requestSpec, responseSpec, FULFIL_SURVEY_URL, getTestPPIAsJSON(), "clientId");
+    public SurveyData retrieveSurvey(Long surveyId) {
+        return ok(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().findSurvey(surveyId));
     }
 
-    // TODO: Rewrite to use fineract-client instead!
-    // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
-    // org.apache.fineract.client.models.PostLoansLoanIdRequest)
-    @Deprecated(forRemoval = true)
-    public static String getTestPPIAsJSON() {
-        final HashMap<String, String> map = new HashMap<>();
-
-        map.put("date", "2014-05-19 00:00:00");
-        map.put("ppi_household_members_cd_q1_householdmembers", "107");
-        map.put("ppi_highestschool_cd_q2_highestschool", "112");
-        map.put("ppi_businessoccupation_cd_q3_businessoccupation", "116");
-        map.put("dateFormat", "dd MMMM yyyy");
-        map.put("locale", "en");
-        map.put("ppi_habitablerooms_cd_q4_habitablerooms", "120");
-
-        map.put("ppi_floortype_cd_q5_floortype", "124");
-        map.put("ppi_lightingsource_cd_q6_lightingsource", "126");
-        map.put("ppi_irons_cd_q7_irons", "128");
-        map.put("ppi_mosquitonets_cd_q8_mosquitonets", "132");
-        map.put("ppi_towels_cd_q9_towels", "134");
-        map.put("ppi_fryingpans_cd_q10_fryingpans", "138");
-
-        LOG.info("map :  {}", map);
-        return new Gson().toJson(map);
+    public List<SurveyData> retrieveAllSurveys() {
+        return ok(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().fetchAllSurveys((Boolean) null));
     }
 
-    // TODO: Rewrite to use fineract-client instead!
-    // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
-    // org.apache.fineract.client.models.PostLoansLoanIdRequest)
-    @Deprecated(forRemoval = true)
-    public static void verifySurveyCreatedOnServer(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
-            final Integer generatedClientID) {
-        LOG.info("------------------------------CHECK CLIENT DETAILS------------------------------------\n");
-        final String SURVEY_URL = "/fineract-provider/api/v1/Survey/ppi_kenya_2009/clientid/entryId" + generatedClientID + "?"
-                + Utils.TENANT_IDENTIFIER;
-        final Integer responseClientID = Utils.performServerGet(requestSpec, responseSpec, SURVEY_URL, "id");
-        assertEquals(generatedClientID, responseClientID, "ERROR IN CREATING THE CLIENT");
+    public List<SurveyData> retrieveActiveSurveys() {
+        return ok(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().fetchAllSurveys(true));
     }
 
+    public String updateSurvey(Long surveyId, SurveyData surveyData) {
+        return ok(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().editSurvey(surveyId, surveyData));
+    }
+
+    public void deactivateSurvey(Long surveyId) {
+        executeVoid(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().activateOrDeactivateSurvey(surveyId,
+                DEACTIVATE_COMMAND));
+        log.info("Survey deactivated successfully: {}", surveyId);
+    }
+
+    public void activateSurvey(Long surveyId) {
+        executeVoid(() -> FineractFeignClientHelper.getFineractFeignClient().spmSurveys().activateOrDeactivateSurvey(surveyId,
+                ACTIVATE_COMMAND));
+        log.info("Survey activated successfully: {}", surveyId);
+    }
+
+    public String getSurveyName(SurveyData survey) {
+        return survey.getName();
+    }
+
+    public String getSurveyDescription(SurveyData survey) {
+        return survey.getDescription();
+    }
+
+    public LocalDate getSurveyValidFrom(SurveyData survey) {
+        return survey.getValidFrom();
+    }
+
+    public LocalDate getSurveyValidTo(SurveyData survey) {
+        return survey.getValidTo();
+    }
+
+    public int getSurveyQuestionsCount(SurveyData survey) {
+        return survey.getQuestionDatas() != null ? survey.getQuestionDatas().size() : 0;
+    }
+
+    public String getSurveyKey(SurveyData survey) {
+        return survey.getKey();
+    }
+
+    public String getSurveyCountryCode(SurveyData survey) {
+        return survey.getCountryCode();
+    }
+
+    private void validateSurveyInputs(String name, String description, List<String> questions) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Survey name cannot be null or empty");
+        }
+        if (questions == null || questions.isEmpty()) {
+            throw new IllegalArgumentException("Survey must have at least one question");
+        }
+    }
+
+    private SurveyData buildSurveyData(String name, String description, LocalDate validFrom, LocalDate validTo, List<String> questions) {
+        SurveyData surveyData = new SurveyData().name(name).description(description).validFrom(validFrom).validTo(validTo).countryCode("KE")
+                .key(SURVEY_KEY_PREFIX + System.currentTimeMillis());
+        surveyData.questionDatas(buildQuestionDataList(questions));
+        return surveyData;
+    }
+
+    private List<QuestionData> buildQuestionDataList(List<String> questions) {
+        List<QuestionData> questionDataList = new ArrayList<>(questions.size());
+        for (int i = 0; i < questions.size(); i++) {
+            QuestionData questionData = new QuestionData().text(questions.get(i)).sequenceNo(i + 1).key(QUESTION_KEY_PREFIX + (i + 1))
+                    .description(QUESTION_DESC_PREFIX + (i + 1)).responseDatas(createYesNoResponses());
+            questionDataList.add(questionData);
+        }
+        return questionDataList;
+    }
+
+    private List<ResponseData> createYesNoResponses() {
+        List<ResponseData> responses = new ArrayList<>(2);
+        responses.add(new ResponseData().text(YES_RESPONSE).value(1).sequenceNo(1));
+        responses.add(new ResponseData().text(NO_RESPONSE).value(0).sequenceNo(2));
+        return responses;
+    }
 }

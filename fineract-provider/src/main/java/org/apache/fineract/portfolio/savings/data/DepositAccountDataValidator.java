@@ -306,13 +306,13 @@ public class DepositAccountDataValidator {
             isLockinPeriodFrequencyValidated = true;
             final Integer lockinPeriodFrequency = this.fromApiJsonHelper.extractIntegerWithLocaleNamed(lockinPeriodFrequencyParamName,
                     element);
-            baseDataValidator.reset().parameter(lockinPeriodFrequencyParamName).value(lockinPeriodFrequency).integerZeroOrGreater();
+            baseDataValidator.reset().parameter(lockinPeriodFrequencyParamName).value(lockinPeriodFrequency).ignoreIfNull();
 
             if (lockinPeriodFrequency != null) {
                 isLockinPeriodFrequencyTypeValidated = true;
                 final Integer lockinPeriodFrequencyType = this.fromApiJsonHelper
                         .extractIntegerSansLocaleNamed(lockinPeriodFrequencyTypeParamName, element);
-                baseDataValidator.reset().parameter(lockinPeriodFrequencyTypeParamName).value(lockinPeriodFrequencyType).notNull()
+                baseDataValidator.reset().parameter(lockinPeriodFrequencyTypeParamName).value(lockinPeriodFrequencyType).ignoreIfNull()
                         .inMinMaxRange(0, 3);
             }
         }
@@ -325,7 +325,7 @@ public class DepositAccountDataValidator {
             if (lockinPeriodFrequencyType != null && !isLockinPeriodFrequencyValidated) {
                 final Integer lockinPeriodFrequency = this.fromApiJsonHelper.extractIntegerWithLocaleNamed(lockinPeriodFrequencyParamName,
                         element);
-                baseDataValidator.reset().parameter(lockinPeriodFrequencyParamName).value(lockinPeriodFrequency).notNull()
+                baseDataValidator.reset().parameter(lockinPeriodFrequencyParamName).value(lockinPeriodFrequency).ignoreIfNull()
                         .integerZeroOrGreater();
             }
         }
@@ -562,12 +562,12 @@ public class DepositAccountDataValidator {
 
         // for recurring deposit the total deposit amount is derived from
         // recurring deposit amount * number of deposits.
-        if (depositType.isFixedDeposit()) {
+        if (depositType == DepositAccountType.FIXED_DEPOSIT) {
             final BigDecimal depositAmount = fromApiJsonHelper.extractBigDecimalWithLocaleNamed(depositAmountParamName, element);
             baseDataValidator.reset().parameter(depositAmountParamName).value(depositAmount).notNull().positiveAmount();
         }
 
-        if (depositType.isFixedDeposit() || fromApiJsonHelper.parameterExists(depositPeriodParamName, element)) {
+        if (depositType == DepositAccountType.FIXED_DEPOSIT || fromApiJsonHelper.parameterExists(depositPeriodParamName, element)) {
             final Integer depositPeriod = fromApiJsonHelper.extractIntegerSansLocaleNamed(depositPeriodParamName, element);
             baseDataValidator.reset().parameter(depositPeriodParamName).value(depositPeriod).notNull().integerGreaterThanZero();
         }
@@ -589,7 +589,7 @@ public class DepositAccountDataValidator {
 
         if (fromApiJsonHelper.parameterExists(depositPeriodParamName, element)) {
             final Integer depositPeriod = fromApiJsonHelper.extractIntegerSansLocaleNamed(depositPeriodParamName, element);
-            if (depositAccountType.isFixedDeposit()) {
+            if (depositAccountType == DepositAccountType.FIXED_DEPOSIT) {
                 baseDataValidator.reset().parameter(depositPeriodParamName).value(depositPeriod).notNull().integerGreaterThanZero();
             } else {
                 baseDataValidator.reset().parameter(depositPeriodParamName).value(depositPeriod).notNull().integerGreaterThanZero();

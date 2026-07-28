@@ -47,14 +47,14 @@ public class SearchParameters {
     private String currencyCode;
     private Long staffId;
     private Long loanId;
+    private Long clientId;
     private Long savingsId;
     @Getter(AccessLevel.NONE)
     private Boolean orphansOnly;
     private Long provisioningEntryId;
     private Long productId;
     private Long categoryId;
-    @Getter(AccessLevel.NONE)
-    private Boolean isSelfUser;
+    private Integer legalForm;
 
     public Integer getLimit() {
         if (limit == null) {
@@ -70,10 +70,6 @@ public class SearchParameters {
 
     public Boolean getOrphansOnly() {
         return Boolean.TRUE.equals(orphansOnly);
-    }
-
-    public Boolean getIsSelfUser() {
-        return Boolean.TRUE.equals(isSelfUser);
     }
 
     public boolean hasOrderBy() {
@@ -126,5 +122,17 @@ public class SearchParameters {
 
     public boolean hasCategoryId() {
         return this.categoryId != null && this.categoryId != 0;
+    }
+
+    public boolean isPerson() {
+        return this.legalForm != null && this.legalForm == 1;
+    }
+
+    public boolean isEntity() {
+        return this.legalForm != null && this.legalForm == 2;
+    }
+
+    public boolean hasLegalForm() {
+        return this.legalForm != null;
     }
 }

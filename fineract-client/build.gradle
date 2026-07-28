@@ -17,6 +17,7 @@
  * under the License.
  */
 apply plugin: 'org.openapi.generator'
+apply plugin: 'idea'
 description = 'Fineract Client'
 
 apply from: 'dependencies.gradle'
@@ -26,13 +27,34 @@ apply from: 'dependencies.gradle'
 openApiMeta {
     generatorName = 'Fineract'
     packageName = 'org.apache.fineract.client'
-    outputFolder = "$buildDir/meta".toString()
+    outputFolder = file("$buildDir/meta")
     // trick to make sure fineract.json is generated first
 }
 
 openApiValidate {
-    inputSpec = "file:///$swaggerFile"
+    inputSpec = file(swaggerFile)
     recommend = true
+}
+
+openApiGenerate {
+    outputDir = file("$buildDir/generated/temp-java")
+}
+
+idea {
+    module {
+        // Marks the generated directory as a Source Root
+        sourceDirs += file("$buildDir/generated/temp-java/src/main/java")
+        // Or use generatedSourceDirs for explicit "Generated Source" marking
+        generatedSourceDirs += file("$buildDir/generated/temp-java/src/main/java")
+    }
+}
+
+spotbugsMain {
+    enabled = false
+}
+
+spotbugsTest {
+    enabled = false
 }
 
 task buildJavaSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateTask) {
@@ -40,9 +62,10 @@ task buildJavaSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateT
     verbose = false
     validateSpec = false
     skipValidateSpec = true
-    inputSpec = "file:///$swaggerFile"
-    outputDir = "$buildDir/generated/temp-java".toString()
-    templateDir = "$projectDir/src/main/resources/templates/java"
+    cleanupOutput = true
+    inputSpec = file(swaggerFile)
+    outputDir = file("$buildDir/generated/temp-java")
+    templateDir = file("$projectDir/src/main/resources/templates/java")
     groupId = 'org.apache.fineract'
     apiPackage = 'org.apache.fineract.client.services'
     invokerPackage = 'org.apache.fineract.client'
@@ -52,11 +75,14 @@ task buildJavaSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateT
         useRxJava2: 'false',
         library: 'retrofit2',
         hideGenerationTimestamp: 'true',
-        containerDefaultToNull: 'true'
+        containerDefaultToNull: 'true',
+        oauth2Implementation: 'none'
     ]
     generateModelTests = false
     generateApiTests = false
-    ignoreFileOverride = "$projectDir/.openapi-generator-ignore"
+    generateModelDocumentation = false
+    generateApiDocumentation = false
+    ignoreFileOverride = file("$projectDir/.openapi-generator-ignore")
     dependsOn(':fineract-provider:resolve')
 }
 
@@ -65,8 +91,9 @@ task buildTypescriptAngularSdk(type: org.openapitools.generator.gradle.plugin.ta
     verbose = false
     validateSpec = false
     skipValidateSpec = true
-    inputSpec = "file:///$swaggerFile"
-    outputDir = "$buildDir/generated/typescript".toString()
+    cleanupOutput = true
+    inputSpec = file(swaggerFile)
+    outputDir = file("$buildDir/generated/typescript")
     apiPackage = 'apache-fineract-client/services'
     invokerPackage = 'apache-fineract-client/invoker'
     modelPackage = 'apache-fineract-client/models'
@@ -78,6 +105,26 @@ task buildTypescriptAngularSdk(type: org.openapitools.generator.gradle.plugin.ta
         npmRepository: "${npmRepository}"
     ]
     dependsOn(':fineract-provider:resolve')
+    mustRunAfter(buildJavaSdk)
+}
+
+task buildTypescriptFetchSdk(type: org.openapitools.generator.gradle.plugin.tasks.GenerateTask) {
+    generatorName = 'typescript-fetch'
+    verbose = false
+    validateSpec = false
+    skipValidateSpec = true
+    cleanupOutput = true
+    inputSpec = file(swaggerFile)
+    outputDir = file("$buildDir/generated/typescript-fetch")
+    configOptions = [
+        npmName: '@apache/fineract-client-fetch',
+        npmVersion: '1.12.0-SNAPSHOT',
+        typescriptThreePlus: 'true',
+        supportsES6: 'true',
+        withInterfaces: 'true'
+    ]
+    dependsOn(':fineract-provider:resolve')
+    mustRunAfter(buildTypescriptAngularSdk)
 }
 
 task buildAsciidoc(type: org.openapitools.generator.gradle.plugin.tasks.GenerateTask){
@@ -85,8 +132,9 @@ task buildAsciidoc(type: org.openapitools.generator.gradle.plugin.tasks.Generate
     verbose = false
     validateSpec = false
     skipValidateSpec = true
-    inputSpec = "file:///$swaggerFile"
-    outputDir = "$buildDir/generated/asciidoc".toString()
+    cleanupOutput = true
+    inputSpec = file(swaggerFile)
+    outputDir = file("$buildDir/generated/asciidoc")
     apiPackage = 'org.apache.fineract.client.services'
     invokerPackage = 'org.apache.fineract.client'
     modelPackage = 'org.apache.fineract.client.models'
@@ -105,6 +153,7 @@ task buildAsciidoc(type: org.openapitools.generator.gradle.plugin.tasks.Generate
         useMethodAndPath: 'true'
     ]
     dependsOn(':fineract-provider:resolve')
+    mustRunAfter(buildTypescriptAngularSdk)
 }
 
 // Configure source sets with proper output directories
@@ -135,22 +184,38 @@ task cleanupGeneratedJavaFiles() {
     def tempDir = file("$buildDir/generated/temp-java")
     def targetDir = file("$buildDir/generated/java")
     
-    inputs.dir(tempDir)
+    inputs.dir(tempDir).optional()
     outputs.dir(targetDir)
-    
-    doLast {
-        copy {
-            from tempDir
-            into targetDir
-            filter { line ->
-                line
-                    .replaceAll("import org\\.joda\\.time\\.\\*;", "")
-                    .replaceAll(", \\)", ")")
-                    .replaceAll(", , @HeaderMap", ", @HeaderMap")
-                    .replaceAll("\\(, ", "(")
+    onlyIf { tempDir.exists() }
+
+    //TODO: remove harcoded, autogenerated Oltu's OAuthOkHttpClient.java from the generated files
+    doFirst {
+        if (tempDir.exists()) {
+            delete fileTree(tempDir) {
+                include "src/main/java/org/apache/fineract/client/auth/OAuthOkHttpClient.java"
             }
-            // Also set duplicates strategy for the copy task
-            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        }
+        if (targetDir.exists()) {
+            delete fileTree(targetDir) {
+                include "src/main/java/org/apache/fineract/client/auth/OAuthOkHttpClient.java"
+            }
+        }
+    }
+    doLast {
+        if (tempDir.exists()) {
+            copy {
+                from tempDir
+                into targetDir
+                filter { line ->
+                    line
+                        .replaceAll("import org\\.joda\\.time\\.\\*;", "")
+                        .replaceAll(", \\)", ")")
+                        .replaceAll(", , @HeaderMap", ", @HeaderMap")
+                        .replaceAll("\\(, ", "(")
+                }
+                // Also set duplicates strategy for the copy task
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            }
         }
     }
     dependsOn("buildJavaSdk")

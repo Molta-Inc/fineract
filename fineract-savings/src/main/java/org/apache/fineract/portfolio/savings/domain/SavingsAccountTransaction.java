@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
+import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.domain.LocalDateInterval;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
@@ -85,6 +86,9 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
 
     @Column(name = "is_reversed", nullable = false)
     private boolean reversed;
+
+    @Column(name = "external_id", length = 100, nullable = true, unique = true)
+    private ExternalId externalId = ExternalId.empty();
 
     @Column(name = "running_balance_derived", scale = 6, precision = 19, nullable = true)
     private BigDecimal runningBalance;
@@ -196,6 +200,14 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         final Boolean lienTransaction = false;
         return new SavingsAccountTransaction(savingsAccount, office, paymentDetail, SavingsAccountTransactionType.WITHDRAWAL.getValue(),
                 date, amount, isReversed, isManualTransaction, lienTransaction, refNo);
+    }
+
+    public static SavingsAccountTransaction accrual(final SavingsAccount savingsAccount, final Office office, final LocalDate date,
+            final Money amount, final boolean isManualTransaction, final String refNo) {
+        final boolean isReversed = false;
+        final Boolean lienTransaction = false;
+        return new SavingsAccountTransaction(savingsAccount, office, SavingsAccountTransactionType.ACCRUAL.getValue(), date, amount,
+                isReversed, isManualTransaction, lienTransaction, refNo);
     }
 
     public static SavingsAccountTransaction interestPosting(final SavingsAccount savingsAccount, final Office office, final LocalDate date,
@@ -363,6 +375,14 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         return this.dateOf;
     }
 
+    public ExternalId getExternalId() {
+        return this.externalId;
+    }
+
+    public void updateExternalId(final ExternalId externalId) {
+        this.externalId = externalId;
+    }
+
     public LocalDate getEndOfBalanceDate() {
         return balanceEndDate;
     }
@@ -415,7 +435,7 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
         return Money.of(currency, this.overdraftAmount);
     }
 
-    void setOverdraftAmount(Money overdraftAmount) {
+    public void setOverdraftAmount(Money overdraftAmount) {
         this.overdraftAmount = overdraftAmount == null ? null : overdraftAmount.getAmount();
     }
 
@@ -509,6 +529,10 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
 
     public boolean isPostInterestCalculationRequired() {
         return this.isDeposit() || this.isWithdrawal() || this.isChargeTransaction() || this.isDividendPayout() || this.isInterestPosting();
+    }
+
+    public boolean isAccrual() {
+        return getTransactionType().isAccrual();
     }
 
     public boolean isInterestPostingAndNotReversed() {
@@ -631,8 +655,8 @@ public final class SavingsAccountTransaction extends AbstractAuditableWithUTCDat
             for (final SavingsAccountTransactionTaxDetails taxDetails : this.taxDetails) {
                 final Map<String, Object> taxDetailsData = new HashMap<>();
                 taxDetailsData.put("amount", taxDetails.getAmount());
-                if (taxDetails.getTaxComponent().getCreditAcount() != null) {
-                    taxDetailsData.put("creditAccountId", taxDetails.getTaxComponent().getCreditAcount().getId());
+                if (taxDetails.getTaxComponent().getCreditAccount() != null) {
+                    taxDetailsData.put("creditAccountId", taxDetails.getTaxComponent().getCreditAccount().getId());
                 }
                 taxData.add(taxDetailsData);
             }

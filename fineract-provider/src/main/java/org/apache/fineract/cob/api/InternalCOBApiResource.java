@@ -21,6 +21,7 @@ package org.apache.fineract.cob.api;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -35,34 +36,37 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.fineract.cob.data.LoanCOBPartition;
+import org.apache.fineract.cob.data.COBPartition;
 import org.apache.fineract.cob.loan.LoanCOBConstant;
-import org.apache.fineract.cob.loan.RetrieveLoanIdService;
+import org.apache.fineract.cob.service.RetrieveLoanIdService;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.boot.FineractProfiles;
-import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.ToApiJsonSerializer;
 import org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepositoryWrapper;
+import org.apache.fineract.portfolio.loanaccount.service.LoanScheduleService;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Profile(FineractProfiles.TEST)
 @Component
 @Path("/v1/internal/cob")
 @RequiredArgsConstructor
+@Tag(name = "Internal COB", description = "Internal COB api for testing purpose")
 @Slf4j
 public class InternalCOBApiResource implements InitializingBean {
 
     private static final String DATETIME_PATTERN = "dd MMMM yyyy";
 
-    private final RetrieveLoanIdService retrieveLoanIdService;
+    private final RetrieveLoanIdService retrieveIdService;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     private final ToApiJsonSerializer<List> toApiJsonSerializerForList;
     private final LoanRepositoryWrapper loanRepositoryWrapper;
+    private final LoanScheduleService loanScheduleService;
 
     protected DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern(DATETIME_PATTERN);
 
@@ -79,16 +83,12 @@ public class InternalCOBApiResource implements InitializingBean {
     }
 
     @GET
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Path("partitions/{partitionSize}")
-    public String getCobPartitions(@Context final UriInfo uriInfo, @PathParam("partitionSize") int partitionSize) {
+    public List<COBPartition> getCobPartitions(@Context final UriInfo uriInfo, @PathParam("partitionSize") int partitionSize) {
         LocalDate businessDate = ThreadLocalContextUtil.getBusinessDateByType(BusinessDateType.BUSINESS_DATE);
         log.info("RetrieveLoanCOBPartitions is called with partitionSize {} for {}", partitionSize, businessDate);
-        List<LoanCOBPartition> loanCOBPartitions = retrieveLoanIdService.retrieveLoanCOBPartitions(LoanCOBConstant.NUMBER_OF_DAYS_BEHIND,
-                businessDate, false, partitionSize);
-        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        return toApiJsonSerializerForList.serialize(settings, loanCOBPartitions);
+        return retrieveIdService.retrieveLoanCOBPartitions(LoanCOBConstant.NUMBER_OF_DAYS_BEHIND, businessDate, false, partitionSize);
     }
 
     @POST
@@ -96,11 +96,22 @@ public class InternalCOBApiResource implements InitializingBean {
     @Path("fast-forward-cob-date-of-loan/{loanId}")
     public void updateLoanCobLastDate(@Context final UriInfo uriInfo, @PathParam("loanId") long loanId, String jsonBody) {
         JsonElement root = JsonParser.parseString(jsonBody);
+        if (root.isJsonPrimitive() && root.getAsJsonPrimitive().isString()) {
+            root = JsonParser.parseString(root.getAsString());
+        }
         String lastClosedBusinessDate = root.getAsJsonObject().get("lastClosedBusinessDate").getAsString();
         Loan loan = loanRepositoryWrapper.findOneWithNotFoundDetection(loanId);
         LocalDate localDate = LocalDate.parse(lastClosedBusinessDate, dateTimeFormatter);
         loan.setLastClosedBusinessDate(localDate);
         loanRepositoryWrapper.save(loan);
+    }
+
+    @POST
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Path("loan-reprocess/{loanId}")
+    @Transactional
+    public void loanReprocess(@Context final UriInfo uriInfo, @PathParam("loanId") long loanId) {
+        loanScheduleService.regenerateScheduleWithReprocessingTransactions(loanRepositoryWrapper.findOneWithNotFoundDetection(loanId));
     }
 
 }

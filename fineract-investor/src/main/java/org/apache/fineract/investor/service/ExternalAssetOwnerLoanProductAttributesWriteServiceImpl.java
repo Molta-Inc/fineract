@@ -22,7 +22,6 @@ import static org.reflections.scanners.Scanners.SubTypes;
 
 import com.google.gson.JsonElement;
 import com.google.gson.reflect.TypeToken;
-import jakarta.transaction.Transactional;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,6 +51,7 @@ import org.apache.fineract.portfolio.loanproduct.exception.LoanProductNotFoundEx
 import org.reflections.Reflections;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -85,13 +85,8 @@ public class ExternalAssetOwnerLoanProductAttributesWriteServiceImpl implements 
 
     @Override
     @CacheEvict(cacheNames = "externalAssetOwnerLoanProductAttributes", key = "T(org.apache.fineract.infrastructure.core.service.ThreadLocalContextUtil).getTenant().getTenantIdentifier().concat(#command.getProductId().toString() + #attributeKey)")
-    public CommandProcessingResult updateExternalAssetOwnerLoanProductAttribute(JsonCommand command) {
-        final JsonElement json = fromApiJsonHelper.parse(command.json());
-        String attributeKey = fromApiJsonHelper.extractStringNamed(ExternalAssetOwnerLoanProductAttributeRequestParameters.ATTRIBUTE_KEY,
-                json);
-        String attributeValue = fromApiJsonHelper
-                .extractStringNamed(ExternalAssetOwnerLoanProductAttributeRequestParameters.ATTRIBUTE_VALUE, json);
-
+    public CommandProcessingResult updateExternalAssetOwnerLoanProductAttribute(JsonCommand command, String attributeKey,
+            String attributeValue) {
         Long loanProductId = command.getProductId();
         Long attributeId = command.entityId();
         validateLoanProductAttributeRequest(command.json(), attributeKey, attributeValue);
@@ -188,6 +183,8 @@ public class ExternalAssetOwnerLoanProductAttributesWriteServiceImpl implements 
     }
 
     private CommandProcessingResult buildResponseData(ExternalAssetOwnerLoanProductAttributes savedAttribute) {
-        return new CommandProcessingResultBuilder().withEntityId(savedAttribute.getLoanProductId()).build();
+        return new CommandProcessingResultBuilder() //
+                .withEntityId(savedAttribute.getLoanProductId()) //
+                .build();
     }
 }

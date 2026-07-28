@@ -29,8 +29,11 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 public class EmiChangeOperation {
 
-    public enum Action {
-        DISBURSEMENT, INTEREST_RATE_CHANGE
+    public enum Action { //
+        DISBURSEMENT, //
+        INTEREST_RATE_CHANGE, //
+        CAPITALIZED_INCOME, //
+        ADD_REPAYMENT_PERIODS, //
     }
 
     private final Action action;
@@ -39,18 +42,37 @@ public class EmiChangeOperation {
     private final Money amount;
     private final BigDecimal interestRate;
 
+    private final int periodsToAdd;
+
     public static EmiChangeOperation disburse(final LocalDate disbursementDueDate, final Money disbursedAmount) {
-        return new EmiChangeOperation(EmiChangeOperation.Action.DISBURSEMENT, disbursementDueDate, disbursedAmount, null);
+        return new EmiChangeOperation(EmiChangeOperation.Action.DISBURSEMENT, disbursementDueDate, disbursedAmount, null, 0);
     }
 
     public static EmiChangeOperation changeInterestRate(final LocalDate newInterestSubmittedOnDate, final BigDecimal newInterestRate) {
-        return new EmiChangeOperation(EmiChangeOperation.Action.INTEREST_RATE_CHANGE, newInterestSubmittedOnDate, null, newInterestRate);
+        return new EmiChangeOperation(EmiChangeOperation.Action.INTEREST_RATE_CHANGE, newInterestSubmittedOnDate, null, newInterestRate, 0);
+    }
+
+    public static EmiChangeOperation capitalizedIncome(final LocalDate transactionDueDate, final Money transactionAmount) {
+        return new EmiChangeOperation(Action.CAPITALIZED_INCOME, transactionDueDate, transactionAmount, null, 0);
+    }
+
+    public static EmiChangeOperation addRepaymentPeriods(final LocalDate transactionDueDate, final Money transactionAmount,
+            final int numPeriods) {
+        return new EmiChangeOperation(Action.ADD_REPAYMENT_PERIODS, transactionDueDate, transactionAmount, null, numPeriods);
     }
 
     public EmiChangeOperation withZeroAmount() {
-        if (action == Action.DISBURSEMENT) {
-            return new EmiChangeOperation(action, submittedOnDate, amount.zero(), null);
+        if (action == Action.DISBURSEMENT || action == Action.CAPITALIZED_INCOME) {
+            return new EmiChangeOperation(action, submittedOnDate, amount.zero(), null, 0);
         }
         return null;
+    }
+
+    public boolean isAddRepaymentPeriods() {
+        return action == Action.ADD_REPAYMENT_PERIODS;
+    }
+
+    public boolean isInterestRateChange() {
+        return action == Action.INTEREST_RATE_CHANGE;
     }
 }

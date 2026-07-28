@@ -27,6 +27,7 @@ import org.apache.fineract.infrastructure.bulkimport.constants.TemplatePopulateI
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.EnumOptionData;
 import org.apache.fineract.infrastructure.core.exception.AbstractPlatformException;
+import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.exception.UnsupportedParameterException;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.poi.ss.usermodel.Cell;
@@ -53,10 +54,18 @@ public final class ImportHandlerUtils {
         Integer noOfEntries = 0;
         // getLastRowNum and getPhysicalNumberOfRows showing false values
         // sometimes
-        while (sheet.getRow(noOfEntries + 1) != null && sheet.getRow(noOfEntries + 1).getCell(primaryColumn) != null) {
+        int maxRows = sheet.getLastRowNum();
+        while (noOfEntries < maxRows) {
+            Row row = sheet.getRow(noOfEntries + 1);
+            if (row == null) {
+                break;
+            }
+            Cell cell = row.getCell(primaryColumn);
+            if (cell == null || cell.getCellType() == CellType.BLANK) {
+                break;
+            }
             noOfEntries++;
         }
-
         return noOfEntries;
     }
 
@@ -107,7 +116,7 @@ public final class ImportHandlerUtils {
 
                     String res = trimEmptyDecimalPortion(value.getStringValue());
 
-                    if (!StringUtils.isNotEmpty(res)) {
+                    if (StringUtils.isNotEmpty(res)) {
                         return res.trim();
                     }
                 } catch (Exception e) {
@@ -274,7 +283,9 @@ public final class ImportHandlerUtils {
     }
 
     public static String getErrorMessage(RuntimeException re) {
-        if (re instanceof AbstractPlatformException) {
+        if (re instanceof PlatformApiDataValidationException validationException && !validationException.getErrors().isEmpty()) {
+            return getDefaultUserMessages(validationException.getErrors());
+        } else if (re instanceof AbstractPlatformException) {
             AbstractPlatformException abstractPlatformException = (AbstractPlatformException) re;
             return abstractPlatformException.getDefaultUserMessage();
         } else if (re instanceof UnsupportedParameterException) {
@@ -317,7 +328,7 @@ public final class ImportHandlerUtils {
                             return 0L;
                         }
                     } else {
-                        return 0L;
+                        return null;
                     }
                 }
             }

@@ -19,15 +19,22 @@
 // TODO: this is work in progress, please follow FINERACT-1171
 buildscript {
     ext {
-        jacocoVersion = '0.8.12'
+        jacocoVersion = '0.8.14'
         retrofitVersion = '2.9.0'
         okhttpVersion = '4.9.3'
-        oltuVersion = '1.0.1'
         fineractCustomProjects = []
         fineractJavaProjects = subprojects.findAll{
             [
-                'fineract-api',
                 'fineract-core',
+                'fineract-security',
+                'fineract-cob',
+                'fineract-validation',
+                'fineract-command',
+                'fineract-command-test',
+                'fineract-command-jdbc',
+                'fineract-command-audit',
+                'fineract-command-async',
+                'fineract-command-disruptor',
                 'fineract-accounting',
                 'fineract-provider',
                 'fineract-branch',
@@ -36,39 +43,52 @@ buildscript {
                 'fineract-charge',
                 'fineract-rates',
                 'fineract-tax',
+                'fineract-loan-origination',
                 'fineract-loan',
                 'fineract-savings',
                 'fineract-report',
+                'fineract-mix',
                 'integration-tests',
                 'twofactor-tests',
                 'oauth2-tests',
                 'fineract-client',
+                'fineract-client-feign',
                 'fineract-avro-schemas',
                 'fineract-e2e-tests-core',
                 'fineract-e2e-tests-runner',
                 'fineract-progressive-loan',
-                'fineract-progressive-loan-embeddable-schedule-generator'
+                'fineract-progressive-loan-embeddable-schedule-generator',
+                'fineract-working-capital-loan'
             ].contains(it.name)
         }
         fineractPublishProjects = subprojects.findAll{
             [
                 'fineract-avro-schemas',
-                'fineract-api',
                 'fineract-client',
+                'fineract-client-feign',
                 'fineract-core',
+                'fineract-security',
+                'fineract-cob',
+                'fineract-validation',
+                'fineract-command',
+                'fineract-command-jdbc',
+                'fineract-command-audit',
                 'fineract-accounting',
                 'fineract-provider',
                 'fineract-investor',
                 'fineract-charge',
                 'fineract-rates',
                 'fineract-tax',
+                'fineract-loan-origination',
                 'fineract-loan',
                 'fineract-savings',
                 'fineract-report',
+                'fineract-mix',
                 'fineract-branch',
                 'fineract-document',
                 'fineract-progressive-loan',
-                'fineract-progressive-loan-embeddable-schedule-generator'
+                'fineract-progressive-loan-embeddable-schedule-generator',
+                'fineract-working-capital-loan'
             ].contains(it.name)
         }
         npmRepository = 'https://npm.pkg.github.com'
@@ -79,39 +99,41 @@ buildscript {
 
     dependencies {
         classpath 'com.bmuschko:gradle-cargo-plugin:2.9.0'
-        classpath 'org.eclipse.persistence:eclipselink:4.0.2'
+        classpath 'org.eclipse.persistence:eclipselink:4.0.9'
         classpath 'jakarta.ws.rs:jakarta.ws.rs-api:3.1.0'
         classpath 'com.google.cloud.tools:jib-layer-filter-extension-gradle:0.3.0'
-        classpath 'org.apache.commons:commons-lang3:3.17.0'
-        classpath 'io.swagger.core.v3:swagger-jaxrs2-jakarta:2.2.22'
+        classpath 'org.apache.commons:commons-lang3:3.20.0'
+        classpath 'io.swagger.core.v3:swagger-jaxrs2-jakarta:2.2.49'
         classpath 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     }
 }
 
 plugins {
     id 'me.qoomon.git-versioning' version '6.4.4'
-    id "org.barfuin.gradle.taskinfo" version "2.2.0"
+    id "org.barfuin.gradle.taskinfo" version "2.2.1"
     id 'com.adarshr.test-logger' version '4.0.0'
     id 'com.diffplug.spotless' version '6.25.0' apply false
     id 'org.nosphere.apache.rat' version '0.8.1' apply false
     id 'com.github.hierynomus.license' version '0.16.1' apply false
     id 'com.github.jk1.dependency-license-report' version '2.9' apply false
-    id 'org.zeroturnaround.gradle.jrebel' version '1.2.0' apply false
-    id 'org.springframework.boot' version '3.3.5' apply false
-    id 'net.ltgt.errorprone' version '4.1.0' apply false
-    id 'io.swagger.core.v3.swagger-gradle-plugin' version '2.2.23' apply false
-    id 'com.gorylenko.gradle-git-properties' version '2.4.2' apply false
-    id 'org.asciidoctor.jvm.convert' version '3.3.2' apply false
-    id 'org.asciidoctor.jvm.pdf' version '3.3.2' apply false
-    id 'com.google.cloud.tools.jib' version '3.4.4' apply false
-    id 'org.sonarqube' version '6.0.1.5171'
-    id 'com.github.andygoossens.modernizer' version '1.10.0' apply false
-    // TODO: upgrade to 6.0.4
-    id 'com.github.spotbugs' version '6.0.26' apply false
-    id 'se.thinkcode.cucumber-runner' version '0.0.11' apply false
+    id 'org.zeroturnaround.gradle.jrebel' version '1.2.2' apply false
+    id 'org.springframework.boot' version '3.5.15' apply false
+    id 'net.ltgt.errorprone' version '4.4.0' apply false
+    id 'io.swagger.core.v3.swagger-gradle-plugin' version '2.2.49' apply false
+    id 'com.gorylenko.gradle-git-properties' version '2.5.7' apply false
+    id 'org.asciidoctor.jvm.convert' version '4.0.5' apply false
+    id 'org.asciidoctor.jvm.pdf' version '4.0.5' apply false
+    id 'com.google.cloud.tools.jib' version '3.5.3' apply false
+    id 'org.sonarqube' version '6.3.1.5724'
+    id 'com.github.andygoossens.modernizer' version '1.13.0' apply false
+    id 'com.github.spotbugs' version '6.5.4' apply false
+    id 'se.thinkcode.cucumber-runner' version '0.0.14' apply false
     id "com.github.davidmc24.gradle.plugin.avro-base" version "1.9.1" apply false
-    id 'org.openapi.generator' version '7.8.0' apply false
-    id 'com.gradleup.shadow' version '8.3.5' apply false
+    id 'org.openapi.generator' version '7.22.0' apply false
+    id 'com.gradleup.shadow' version '9.4.1' apply false
+    id 'me.champeau.jmh' version '0.7.3' apply false
+    id 'org.cyclonedx.bom' version '3.2.4' apply false
+    id 'com.docktape.swagger-brake' version '2.7.0' apply false
 }
 
 apply from: "${rootDir}/buildSrc/src/main/groovy/org.apache.fineract.release.gradle"
@@ -134,14 +156,22 @@ gitVersioning.apply {
         branch("maintenance\\/\\d+\\.\\d+") {
             version = '${describe.tag.version.major}.${describe.tag.version.minor}.${describe.tag.version.patch}'
         }
+        tag("(\\d+\\.\\d+\\.\\d+)") {
+            version = '${describe.tag.version.major}.${describe.tag.version.minor}.${describe.tag.version.patch}'
+        }
     }
     rev {
-        version = '${describe.tag.version.major}.${describe.tag.version.minor.next}.${describe.tag.version.patch}-SNAPSHOT'
+        version = '${describe.tag.version.major}.${describe.tag.version.minor.next}.0-SNAPSHOT'
     }
 }
 
 ext['groovy.version'] = '4.0.17'
-ext['swaggerFile'] = "$rootDir/fineract-provider/build/classes/java/main/static/fineract.json".toString()
+ext['swaggerFile'] = "$rootDir/fineract-provider/build/resources/main/static/fineract.json".toString()
+
+// Apply static weaving configuration to all subprojects
+subprojects { subproject ->
+    apply from: rootProject.file('static-weaving.gradle')
+}
 
 allprojects  {
     group = 'org.apache.fineract'
@@ -150,7 +180,20 @@ allprojects  {
         mavenCentral()
     }
 
+    configurations.configureEach {
+        resolutionStrategy {
+            dependencySubstitution {
+                // Substitution is to resolve CVE-2025-12183
+                substitute module('org.lz4:lz4-java') using module('at.yawk.lz4:lz4-java:1.11.0')
+            }
+        }
+    }
+
     configurations {
+        implementation {
+            exclude group: 'commons-logging', module: 'commons-logging'
+        }
+
         api {
             canBeResolved = true
         }
@@ -169,6 +212,7 @@ allprojects  {
                     "SameNameButDifferent", // Until errorprone recognizes Lombok
                     "MultiVariableDeclaration", // Until errorprone recognizes Lombok
                     "UnnecessaryDefaultInEnumSwitch", // FINERACT-1911
+                    "StringConcatToTextBlock", // Error Prone 2.49.0 crashes on JDK 21, raised issue: https://github.com/google/error-prone/issues/5815
                     "AssertEqualsArgumentOrderChecker",
                     "RemoveUnusedImports"  // For generated code
             )
@@ -192,7 +236,7 @@ allprojects  {
     spotless {
         format 'misc', {
             target '**/*.md', '**/*.properties', '**/.gitignore', '**/.openapi-generator-ignore', '**/*.yml', '**/*.xml', '**/**.json', '**/*.sql'
-            targetExclude '**/build/**', '**/bin/**', '**/.settings/**', '**/.idea/**', '**/.gradle/**', '**/gradlew.bat', '**/licenses/**', '**/banner.txt', '.vscode/**', '.profileconfig.json'
+            targetExclude '**/build/**', '**/bin/**', '**/.settings/**', '**/.idea/**', '**/.gradle/**', '**/gradlew.bat', '**/licenses/**', '**/banner.txt', '.vscode/**', '.profileconfig.json', '**/*.md'
             indentWithSpaces(4)
             endWithNewline()
             trimTrailingWhitespace()
@@ -200,7 +244,7 @@ allprojects  {
 
         groovyGradle {
             target '*.gradle', '**/*.gradle'
-            targetExclude '**/build/**', '/**/build.gradle' // TODO: temporary disabled on build.gradle until someone fix this issue: https://github.com/diffplug/spotless/issues/1807
+            targetExclude '**/build/**', '/**/build.gradle','**/static-weaving.gradle' // TODO: temporary disabled on build.gradle until someone fix this issue: https://github.com/diffplug/spotless/issues/1807
             greclipse()
             indentWithSpaces(4)
             endWithNewline()
@@ -325,7 +369,9 @@ allprojects  {
             '**/images/diag-*.svg',
             '**/*.avsc',
             "**/generated/**/*MapperImpl.java",
-            '**/META-INF/fineract-test.config'
+            '**/META-INF/fineract-test.config',
+            // Apache-specific GitHub metadata settings file
+            '/.asf.yaml'
         ]
     }
 }
@@ -353,24 +399,21 @@ configure(project.fineractJavaProjects) {
     apply plugin: 'idea'
 
     java {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
         withSourcesJar()
         withJavadocJar()
     }
 
-    tasks.withType(ProcessResources) {
-        destinationDir = layout.buildDirectory.dir('classes/java/main').get().asFile
-    }
-
     // Add performance optimizations
-    configurations.all {
+    configurations.configureEach {
         resolutionStrategy {
             cacheChangingModulesFor 0, 'seconds'
             cacheDynamicVersionsFor 0, 'seconds'
         }
     }
-    
+
     tasks.withType(JavaCompile).configureEach {
         options.incremental = true
         options.fork = true
@@ -400,15 +443,6 @@ configure(project.fineractJavaProjects) {
 
     group = 'org.apache.fineract'
 
-    /* define the valid syntax level for source files */
-    // sourceCompatibility = JavaVersion.VERSION_17
-    // /* define binary compatibility version */
-    // targetCompatibility = JavaVersion.VERSION_17
-
-    /* http://stackoverflow.com/questions/19653311/jpa-repository-works-in-idea-and-production-but-not-in-gradle */
-    sourceSets.main.output.resourcesDir = sourceSets.main.java.classesDirectory
-    sourceSets.test.output.resourcesDir = sourceSets.test.java.classesDirectory
-
     configurations.named('spotbugs').configure {
         resolutionStrategy.eachDependency {
             if (it.requested.group == 'org.ow2.asm') {
@@ -421,40 +455,41 @@ configure(project.fineractJavaProjects) {
     configurations {
         api.setCanBeResolved(true)
     }
-    tasks.withType(Copy) {
+    tasks.withType(Copy).configureEach {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
-    tasks.withType(JavaCompile) {
+    tasks.withType(JavaCompile).configureEach {
         options.compilerArgs += [
-            "-Xlint:cast",
-            "-Xlint:auxiliaryclass",
-            "-Xlint:dep-ann",
-            "-Xlint:divzero",
-            "-Xlint:empty",
-            "-Xlint:exports",
-            "-Xlint:fallthrough",
-            "-Xlint:finally",
-            "-Xlint:module",
-            "-Xlint:opens",
-            "-Xlint:options",
-            "-Xlint:overloads",
-            "-Xlint:overrides",
-            "-Xlint:path",
-            "-Xlint:processing",
-            "-Xlint:removal",
-            "-Xlint:requires-automatic",
-            "-Xlint:requires-transitive-automatic",
-            "-Xlint:try",
-            "-Xlint:varargs",
-            "-Xlint:preview",
-            "-Xlint:static",
-            // -Werror needs to be disabled because EclipseLink's static weaving doesn't generate warning-free code
-            // and during an IntelliJ recompilation, it fails
-            //"-Werror",
-            "-Xmaxwarns",
-            "1500",
-            "-Xmaxerrs",
-            "1500"
+                "-XDaddTypeAnnotationsToSymbol=true",
+                "-Xlint:cast",
+                "-Xlint:auxiliaryclass",
+                "-Xlint:dep-ann",
+                "-Xlint:divzero",
+                "-Xlint:empty",
+                "-Xlint:exports",
+                "-Xlint:fallthrough",
+                "-Xlint:finally",
+                "-Xlint:module",
+                "-Xlint:opens",
+                "-Xlint:options",
+                "-Xlint:overloads",
+                "-Xlint:overrides",
+                "-Xlint:path",
+//                "-Xlint:processing", -> Unnecessary noise
+                "-Xlint:removal",
+                "-Xlint:requires-automatic",
+                "-Xlint:requires-transitive-automatic",
+                "-Xlint:try",
+                "-Xlint:varargs",
+                "-Xlint:preview",
+                "-Xlint:static",
+                // -Werror needs to be disabled because EclipseLink's static weaving doesn't generate warning-free code
+                // and during an IntelliJ recompilation, it fails
+                //"-Werror",
+                "-Xmaxwarns",
+                "1500",
+                "-Xmaxerrs",
+                "1500"
         ]
         // TODO FINERACT-959 (gradually) enable -Xlint:all (see "javac -help -X")
 
@@ -521,8 +556,16 @@ configure(project.fineractJavaProjects) {
     // Configuration for the Checkstyle plugin
     // https://docs.gradle.org/current/userguide/checkstyle_plugin.html
     dependencies {
-        checkstyle 'com.puppycrawl.tools:checkstyle:10.20.1'
+        checkstyle 'com.puppycrawl.tools:checkstyle:13.4.2'
         checkstyle 'com.github.sevntu-checkstyle:sevntu-checks:1.44.1'
+    }
+
+    tasks.withType(org.gradle.api.plugins.quality.Checkstyle).configureEach {
+        exclude("**/*.avsc")
+
+        if (project.path.startsWith(':custom:acme:')) {
+            enabled = false
+        }
     }
 
     // Configuration for JaCoCo code coverage task
@@ -543,13 +586,16 @@ configure(project.fineractJavaProjects) {
     // Configuration for the errorprone plugin
     // https://github.com/tbroyer/gradle-errorprone-plugin
     dependencies {
-        errorprone "com.google.errorprone:error_prone_core:2.35.1"
+        errorprone "com.google.errorprone:error_prone_core:2.49.0"
     }
 
     tasks.withType(JavaCompile).configureEach {
         options.errorprone {
             enabled = project.gradle.startParameter.taskNames.contains('build') || project.gradle.startParameter.taskNames.contains('check')
             if (project.path == ':fineract-client') {
+                excludedPaths = '.*/build/generated/java/src/main/java/.*'
+            }
+            if (project.path == ':fineract-client-feign') {
                 excludedPaths = '.*/build/generated/java/src/main/java/.*'
             }
             disable(
@@ -671,9 +717,10 @@ configure(project.fineractJavaProjects) {
                 'org.junit.jupiter:junit-jupiter-api',
                 'org.junit.jupiter:junit-jupiter-engine',
                 'org.junit.jupiter:junit-jupiter-params',
-                'org.junit.platform:junit-platform-runner', // required to be able to run tests directly under Eclipse, see FINERACT-943 & FINERACT-1021
-                'org.bouncycastle:bcpkix-jdk15to18',
-                'org.bouncycastle:bcprov-jdk15to18',
+                'org.junit.platform:junit-platform-suite', // required to be able to run tests directly under Eclipse, see FINERACT-943 & FINERACT-1021
+                'org.bouncycastle:bcpkix-jdk18on',
+                'org.bouncycastle:bcprov-jdk18on',
+                'org.bouncycastle:bcutil-jdk18on',
                 'org.awaitility:awaitility',
                 )
 
@@ -722,6 +769,11 @@ configure(project.fineractJavaProjects) {
             }
         }
     }
+    tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+        if (project.path.startsWith(':custom:acme:')) {
+            enabled = false
+        }
+    }
 
     // Configuration for https://github.com/andygoossens/gradle-modernizer-plugin
     modernizer {
@@ -736,17 +788,13 @@ configure(project.fineractJavaProjects) {
         ]
     }
 
-    tasks.withType(Javadoc) {
-        options.addStringOption('Xdoclint:none', '-quiet')
-        options.encoding = 'UTF-8'
-        // Disable strict checking to prevent build failures on invalid javadoc
-        options.addBooleanOption('html5', true)
-        // Add this if you're using Java 17 records or other modern features
-        if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
-            options.addBooleanOption('html5', true)
+    tasks.withType(Javadoc).tap {
+        configureEach {
+            options.addStringOption('Xdoclint:none', '-quiet')
+            options.encoding = 'UTF-8'
+            // Ignore any errors during javadoc generation
+            failOnError = false
         }
-        // Ignore any errors during javadoc generation
-        failOnError = false
     }
 }
 
@@ -785,16 +833,17 @@ configure(project.fineractCustomProjects) {
                 'org.mockito:mockito-junit-jupiter',
                 'org.junit.jupiter:junit-jupiter-api',
                 'org.junit.jupiter:junit-jupiter-engine',
-                'org.junit.platform:junit-platform-runner', // required to be able to run tests directly under Eclipse, see FINERACT-943 & FINERACT-1021
-                'org.bouncycastle:bcpkix-jdk15to18',
-                'org.bouncycastle:bcprov-jdk15to18',
+                'org.junit.platform:junit-platform-suite', // required to be able to run tests directly under Eclipse, see FINERACT-943 & FINERACT-1021
+                'org.bouncycastle:bcpkix-jdk18on',
+                'org.bouncycastle:bcprov-jdk18on',
+                'org.bouncycastle:bcutil-jdk18on',
                 'org.awaitility:awaitility',
                 'io.github.classgraph:classgraph',
                 'io.cucumber:cucumber-core',
-                'io.cucumber:cucumber-java:7.20.1',
-                'io.cucumber:cucumber-java8:7.20.1',
-                'io.cucumber:cucumber-junit-platform-engine:7.20.1',
-                'io.cucumber:cucumber-spring:7.20.1',
+                'io.cucumber:cucumber-java:7.34.3',
+                'io.cucumber:cucumber-java8:7.34.3',
+                'io.cucumber:cucumber-junit-platform-engine:7.34.3',
+                'io.cucumber:cucumber-spring:7.34.3',
                 )
 
         testCompileOnly('org.projectlombok:lombok')
@@ -871,15 +920,30 @@ configure(project.fineractPublishProjects) {
     }
 }
 
-task printSourceSetInformation() {
-    doLast{
+// Configuration for CycloneDX SBOM generator
+// https://github.com/CycloneDX/cyclonedx-gradle-plugin
+apply plugin: 'org.cyclonedx.bom'
+
+cyclonedxBom {
+    projectType = "application"
+    includeBomSerialNumber = true
+    includeLicenseText = true
+}
+
+tasks.withType(org.cyclonedx.gradle.CyclonedxDirectTask).configureEach {
+    includeMetadataResolution.set(false)
+    skipConfigs.set(['.*eclipse.*', '.*swt.*'])
+}
+
+tasks.register('printSourceSetInformation') {
+    doLast {
         sourceSets.each { srcSet ->
-            println "["+srcSet.name+"]"
-            print "-->Source directories: "+srcSet.allJava.srcDirs+"\n"
-            print "-->Output directories: "+srcSet.output.classesDirs.files+"\n"
+            println "[" + srcSet.name + "]"
+            print "-->Source directories: " + srcSet.allJava.srcDirs + "\n"
+            print "-->Output directories: " + srcSet.output.classesDirs.files + "\n"
             print "-->Compile classpath:\n"
             srcSet.compileClasspath.files.each {
-                print "  "+it.path+"\n"
+                print "  " + it.path + "\n"
             }
             println ""
         }

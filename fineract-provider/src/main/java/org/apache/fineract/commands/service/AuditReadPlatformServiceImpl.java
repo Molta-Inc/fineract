@@ -38,6 +38,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.commands.data.AuditData;
 import org.apache.fineract.commands.data.AuditSearchData;
 import org.apache.fineract.commands.data.ProcessingResultLookup;
+import org.apache.fineract.commands.exception.CommandNotFoundException;
 import org.apache.fineract.infrastructure.core.data.PaginationParameters;
 import org.apache.fineract.infrastructure.core.data.PaginationParametersDataValidator;
 import org.apache.fineract.infrastructure.core.domain.JdbcSupport;
@@ -47,12 +48,13 @@ import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.PaginationHelper;
 import org.apache.fineract.infrastructure.core.service.database.DatabaseSpecificSQLGenerator;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
+import org.apache.fineract.infrastructure.security.service.SqlValidator;
 import org.apache.fineract.infrastructure.security.utils.ColumnValidator;
 import org.apache.fineract.infrastructure.security.utils.SQLBuilder;
 import org.apache.fineract.organisation.office.data.OfficeData;
 import org.apache.fineract.organisation.office.service.OfficeReadPlatformService;
 import org.apache.fineract.organisation.staff.data.StaffData;
-import org.apache.fineract.organisation.staff.service.StaffReadPlatformService;
+import org.apache.fineract.organisation.staff.service.StaffReadService;
 import org.apache.fineract.portfolio.client.data.ClientData;
 import org.apache.fineract.portfolio.client.service.ClientReadPlatformService;
 import org.apache.fineract.portfolio.loanproduct.data.LoanProductData;
@@ -67,6 +69,7 @@ import org.apache.fineract.portfolio.savings.service.SavingsProductReadPlatformS
 import org.apache.fineract.useradministration.data.AppUserData;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.apache.fineract.useradministration.service.AppUserReadPlatformService;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -85,13 +88,14 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
     private final OfficeReadPlatformService officeReadPlatformService;
     private final ClientReadPlatformService clientReadPlatformService;
     private final LoanProductReadPlatformService loanProductReadPlatformService;
-    private final StaffReadPlatformService staffReadPlatformService;
+    private final StaffReadService staffReadPlatformService;
     private final PaginationHelper paginationHelper;
     private final DatabaseSpecificSQLGenerator sqlGenerator;
     private final PaginationParametersDataValidator paginationParametersDataValidator;
     private final SavingsProductReadPlatformService savingsProductReadPlatformService;
     private final DepositProductReadPlatformService depositProductReadPlatformService;
     private final ColumnValidator columnValidator;
+    private final SqlValidator sqlValidator;
 
     private static final class AuditMapper implements RowMapper<AuditData> {
 
@@ -105,15 +109,16 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
             String partSql = " aud.id as id, aud.action_name as actionName, aud.entity_name as entityName,"
                     + " aud.resource_id as resourceId, aud.subresource_id as subresourceId,aud.client_id as clientId, aud.loan_id as loanId,"
                     + " mk.username as maker, aud.made_on_date as madeOnDate, aud.made_on_date_utc as madeOnDateUTC, aud.api_get_url as resourceGetUrl, "
-                    + "ck.username as checker, aud.checked_on_date as checkedOnDate, aud.checked_on_date_utc as checkedOnDateUTC,  ev.enum_message_property as processingResult "
+                    + "ck.username as checker, aud.checked_on_date as checkedOnDate, aud.checked_on_date_utc as checkedOnDateUTC,  ev.enum_value as processingResult "
                     + commandAsJsonString + ", "
                     + " o.name as officeName, gl.level_name as groupLevelName, g.display_name as groupName, c.display_name as clientName, "
-                    + " l.account_no as loanAccountNo, s.account_no as savingsAccountNo " + " from m_portfolio_command_source aud "
-                    + " left join m_appuser mk on mk.id = aud.maker_id" + " left join m_appuser ck on ck.id = aud.checker_id"
-                    + " left join m_office o on o.id = aud.office_id" + " left join m_group g on g.id = aud.group_id"
-                    + " left join m_group_level gl on gl.id = g.level_id" + " left join m_client c on c.id = aud.client_id"
-                    + " left join m_loan l on l.id = aud.loan_id" + " left join m_savings_account s on s.id = aud.savings_account_id"
-                    + " left join r_enum_value ev on ev.enum_name = 'status' and ev.enum_id = aud.status";
+                    + " l.account_no as loanAccountNo, s.account_no as savingsAccountNo , aud.client_ip  as ip "
+                    + " from m_portfolio_command_source aud " + " left join m_appuser mk on mk.id = aud.maker_id"
+                    + " left join m_appuser ck on ck.id = aud.checker_id" + " left join m_office o on o.id = aud.office_id"
+                    + " left join m_group g on g.id = aud.group_id" + " left join m_group_level gl on gl.id = g.level_id"
+                    + " left join m_client c on c.id = aud.client_id" + " left join m_loan l on l.id = aud.loan_id"
+                    + " left join m_savings_account s on s.id = aud.savings_account_id"
+                    + " left join r_enum_value ev on ev.enum_name = 'processing_result_enum' and ev.enum_id = aud.status";
 
             // data scoping: head office (hierarchy = ".") can see all audit
             // entries
@@ -156,18 +161,19 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
             final String clientName = rs.getString("clientName");
             final String loanAccountNo = rs.getString("loanAccountNo");
             final String savingsAccountNo = rs.getString("savingsAccountNo");
+            final String ip = rs.getString("ip");
 
             ZonedDateTime madeOnDate = madeOnDateUTC != null ? madeOnDateUTC.toZonedDateTime() : madeOnDateTenant;
             ZonedDateTime checkedOnDate = checkedOnDateUTC != null ? checkedOnDateUTC.toZonedDateTime() : checkedOnDateTenant;
 
             return new AuditData(id, actionName, entityName, resourceId, subresourceId, maker, madeOnDate, checker, checkedOnDate,
                     processingResult, commandAsJson, officeName, groupLevelName, groupName, clientName, loanAccountNo, savingsAccountNo,
-                    clientId, loanId, resourceGetUrl);
+                    clientId, loanId, resourceGetUrl, ip);
         }
     }
 
     @Override
-    public Collection<AuditData> retrieveAuditEntries(final SQLBuilder extraCriteria, final boolean includeJson) {
+    public List<AuditData> retrieveAuditEntries(final SQLBuilder extraCriteria, final boolean includeJson) {
         return retrieveEntries("audit", extraCriteria, " order by aud.id DESC limit " + PaginationParameters.DEFAULT_MAX_LIMIT,
                 includeJson);
     }
@@ -176,6 +182,8 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
     public Page<AuditData> retrievePaginatedAuditEntries(final SQLBuilder extraCriteria, final boolean includeJson,
             final PaginationParameters parameters) {
 
+        sqlValidator.validate(parameters.getOrderBy());
+        sqlValidator.validate(parameters.getSortOrder());
         this.paginationParametersDataValidator.validateParameterValues(parameters, supportedOrderByValues, "audits");
         final AppUser currentUser = this.context.authenticatedUser();
         final String hierarchy = currentUser.getOffice().getHierarchy();
@@ -203,12 +211,12 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
     }
 
     @Override
-    public Collection<AuditData> retrieveAllEntriesToBeChecked(final SQLBuilder extraCriteria, final boolean includeJson) {
+    public List<AuditData> retrieveAllEntriesToBeChecked(final SQLBuilder extraCriteria, final boolean includeJson) {
         extraCriteria.addCriteria("aud.status = ", 2);
         return retrieveEntries("makerchecker", extraCriteria, " order by aud.id, mk.username", includeJson);
     }
 
-    private Collection<AuditData> retrieveEntries(final String useType, final SQLBuilder extraCriteria, final String groupAndOrderBySQL,
+    private List<AuditData> retrieveEntries(final String useType, final SQLBuilder extraCriteria, final String groupAndOrderBySQL,
             final boolean includeJson) {
 
         if ((!useType.equals("audit") && !useType.equals("makerchecker"))) {
@@ -251,9 +259,11 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
 
         final String sql = "select " + rm.schema(true, hierarchy) + " where aud.id = ? ";
 
-        final AuditData auditResult = this.jdbcTemplate.queryForObject(sql, rm, auditId); // NOSONAR
-
-        return replaceIdsOnAuditData(auditResult);
+        try {
+            return replaceIdsOnAuditData(this.jdbcTemplate.queryForObject(sql, rm, auditId)); // NOSONAR
+        } catch (final EmptyResultDataAccessException e) {
+            throw new CommandNotFoundException(auditId, e);
+        }
     }
 
     private AuditData replaceIdsOnAuditData(final AuditData auditResult) {
@@ -387,7 +397,7 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
                     commandAsJsonMap.remove(typeName);
 
                     final Integer enumTypeId = auditObject.get(typeName).getAsInt();
-                    final String code = SavingsEnumerations.savingEnumueration(typeName, enumTypeId).getValue();
+                    final String code = SavingsEnumerations.savingEnumeration(typeName, enumTypeId).getValue();
                     if (code != null) {
                         commandAsJsonMap.put(typeName, code);
                     }
@@ -495,7 +505,7 @@ public class AuditReadPlatformServiceImpl implements AuditReadPlatformService {
         }
 
         public String schema() {
-            return " select enum_id as id, enum_message_property as status from r_enum_value where enum_name = 'status' "
+            return " select enum_id as id, enum_value as status from r_enum_value where enum_name = 'processing_result_enum' "
                     + " order by enum_id";
         }
     }

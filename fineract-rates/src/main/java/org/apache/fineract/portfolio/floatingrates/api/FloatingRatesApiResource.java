@@ -25,7 +25,6 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -35,14 +34,12 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.CommandWrapperBuilder;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
+import org.apache.fineract.infrastructure.core.annotation.AlternativeOperationId;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
@@ -58,10 +55,6 @@ import org.springframework.stereotype.Component;
 public class FloatingRatesApiResource {
 
     private static final String RESOURCE_NAME = "FLOATINGRATE";
-    private static final Set<String> LIST_FLOATING_RATES_PARAMETERS = new HashSet<>(
-            Arrays.asList("id", "name", "isBaseLendingRate", "isActive", "createdby", "createdOn", "modifiedBy", "modifiedOn"));
-    private static final Set<String> INDIVIDUAL_FLOATING_RATES_PARAMETERS = new HashSet<>(Arrays.asList("id", "name", "isBaseLendingRate",
-            "isActive", "createdBy", "createdOn", "modifiedBy", "modifiedOn", "ratePeriods"));
     private final PlatformSecurityContext context;
     private final PortfolioCommandSourceWritePlatformService commandsSourceWritePlatformService;
     private final DefaultToApiJsonSerializer<FloatingRateData> toApiJsonSerializer;
@@ -70,11 +63,10 @@ public class FloatingRatesApiResource {
     @POST
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Create a new Floating Rate", description = "Creates a new Floating Rate\n" + "Mandatory Fields: name\n"
-            + "Optional Fields: isBaseLendingRate, isActive, ratePeriods")
-    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.PostFloatingRatesRequest.class)))
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.PostFloatingRatesResponse.class))) })
+    @Operation(summary = "Create a new Floating Rate", operationId = "createFloatingRate", description = "Creates a new Floating Rate\n"
+            + "Mandatory Fields: name\n" + "Optional Fields: isBaseLendingRate, isActive, ratePeriods")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = FloatingRateRequest.class)))
+    @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.PostFloatingRatesResponse.class)))
     public CommandProcessingResult createFloatingRate(@Parameter(hidden = true) final FloatingRateRequest floatingRateRequest) {
         final CommandWrapper commandRequest = new CommandWrapperBuilder().createFloatingRate()
                 .withJson(toApiJsonSerializer.serialize(floatingRateRequest)).build();
@@ -82,11 +74,10 @@ public class FloatingRatesApiResource {
     }
 
     @GET
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "List Floating Rates", description = "Lists Floating Rates")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK", content = @Content(array = @ArraySchema(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.GetFloatingRatesResponse.class)))) })
+    @Operation(summary = "List Floating Rates", operationId = "retrieveAllFloatingRates", description = "Lists Floating Rates")
+    @AlternativeOperationId("retrieveAll_22")
+    @ApiResponse(responseCode = "200", description = "OK", content = @Content(array = @ArraySchema(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.GetFloatingRatesResponse.class))))
     public List<FloatingRateData> retrieveAll() {
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME);
         return floatingRatesReadPlatformService.retrieveAll();
@@ -94,11 +85,9 @@ public class FloatingRatesApiResource {
 
     @GET
     @Path("{floatingRateId}")
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Retrieve Floating Rate", description = "Retrieves Floating Rate")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.GetFloatingRatesFloatingRateIdResponse.class))) })
+    @Operation(summary = "Retrieve Floating Rate", operationId = "retrieveOneFloatingRate", description = "Retrieves Floating Rate")
+    @AlternativeOperationId("retrieveOne_13")
     public FloatingRateData retrieveOne(@PathParam("floatingRateId") @Parameter(description = "floatingRateId") final Long floatingRateId) {
         this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME);
         return floatingRatesReadPlatformService.retrieveOne(floatingRateId);
@@ -108,10 +97,9 @@ public class FloatingRatesApiResource {
     @Path("{floatingRateId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Update Floating Rate", description = "Updates new Floating Rate. Rate Periods in the past cannot be modified. All the future rateperiods would be replaced with the new ratePeriods data sent.")
-    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.PutFloatingRatesFloatingRateIdRequest.class)))
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.PutFloatingRatesFloatingRateIdResponse.class))) })
+    @Operation(summary = "Update Floating Rate", operationId = "updateFloatingRate", description = "Updates new Floating Rate. Rate Periods in the past cannot be modified. All the future rateperiods would be replaced with the new ratePeriods data sent.")
+    @RequestBody(required = true, content = @Content(schema = @Schema(implementation = FloatingRateRequest.class)))
+    @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FloatingRatesApiResourceSwagger.PutFloatingRatesFloatingRateIdResponse.class)))
     public CommandProcessingResult updateFloatingRate(
             @PathParam("floatingRateId") @Parameter(description = "floatingRateId") final Long floatingRateId,
             @Parameter(hidden = true) final FloatingRateRequest floatingRateRequest) {

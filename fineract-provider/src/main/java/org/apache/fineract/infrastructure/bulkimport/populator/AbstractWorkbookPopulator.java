@@ -39,7 +39,11 @@ import org.slf4j.LoggerFactory;
 public abstract class AbstractWorkbookPopulator implements WorkbookPopulator {
 
     private static final Logger LOG = LoggerFactory.getLogger(AbstractWorkbookPopulator.class);
-    private static final Pattern NAME_REGEX = Pattern.compile("[ @#&()<>,;.:$£€§°\\\\/=!\\?\\-\\+\\*\"\\[\\]]");
+    // Allowlist (not a denylist): Excel named ranges only permit letters, digits, period and underscore, so replace
+    // anything else with '_'. A denylist of "bad" characters silently misses any it forgot — e.g. the apostrophe in
+    // a client name like "IRE'S LIMITED" produced an invalid name 'Account_IRE'S_LIMITED_181_' and threw. Unicode
+    // letters/digits (\p{L}/\p{N}) are kept, matching the previous behaviour for accented names. See FINERACT-1256.
+    private static final Pattern NAME_REGEX = Pattern.compile("[^\\p{L}\\p{N}._]");
 
     protected void writeInt(int colIndex, Row row, int value) {
         row.createCell(colIndex).setCellValue(value);
@@ -103,7 +107,6 @@ public abstract class AbstractWorkbookPopulator implements WorkbookPopulator {
                 writeString(officeNameCol, row, office.getName().trim().replaceAll("[ )(]", "_"));
                 writeDate(activationDateCol, row, "" + office.getOpeningDate().getDayOfMonth() + "/"
                         + office.getOpeningDate().getMonthValue() + "/" + office.getOpeningDate().getYear(), dateCellStyle, dateFormat);
-
             }
         }
     }
@@ -116,6 +119,7 @@ public abstract class AbstractWorkbookPopulator implements WorkbookPopulator {
         dateCellStyle.setDataFormat(df);
         int rowIndex = 0;
         DateTimeFormatter outputFormat = new DateTimeFormatterBuilder().appendPattern(dateFormat).toFormatter();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(dateFormat);
         try {
             if (clients != null) {
                 for (ClientData client : clients) {
@@ -126,7 +130,7 @@ public abstract class AbstractWorkbookPopulator implements WorkbookPopulator {
                     writeString(nameCol, row, client.getDisplayName().replaceAll("[ )(] ", "_") + "(" + client.getId() + ")");
 
                     if (client.getActivationDate() != null) {
-                        writeDate(activationDateCol, row, outputFormat.format(client.getActivationDate()), dateCellStyle, dateFormat);
+                        writeDate(activationDateCol, row, client.getActivationDate().format(formatter), dateCellStyle, dateFormat);
                     }
                     if (containsClientExtId) {
                         if (!client.getExternalId().isEmpty()) {

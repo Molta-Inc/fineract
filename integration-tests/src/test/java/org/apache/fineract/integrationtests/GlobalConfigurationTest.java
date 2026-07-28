@@ -18,22 +18,18 @@
  */
 package org.apache.fineract.integrationtests;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.restassured.builder.RequestSpecBuilder;
-import io.restassured.builder.ResponseSpecBuilder;
-import io.restassured.http.ContentType;
-import io.restassured.specification.RequestSpecification;
-import io.restassured.specification.ResponseSpecification;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.client.models.GetGlobalConfigurationsResponse;
 import org.apache.fineract.client.models.GlobalConfigurationPropertyData;
 import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
 import org.apache.fineract.client.util.CallFailedRuntimeException;
 import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
 import org.apache.fineract.integrationtests.common.GlobalConfigurationHelper;
-import org.apache.fineract.integrationtests.common.Utils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,16 +39,10 @@ import org.junit.jupiter.api.Test;
 
 public class GlobalConfigurationTest {
 
-    private ResponseSpecification responseSpec;
-    private RequestSpecification requestSpec;
     private GlobalConfigurationHelper globalConfigurationHelper;
 
     @BeforeEach
     public void setup() {
-        Utils.initializeRESTAssured();
-        this.requestSpec = new RequestSpecBuilder().setContentType(ContentType.JSON).build();
-        this.requestSpec.header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey());
-        this.responseSpec = new ResponseSpecBuilder().expectStatusCode(200).build();
         globalConfigurationHelper = new GlobalConfigurationHelper();
     }
 
@@ -97,6 +87,22 @@ public class GlobalConfigurationTest {
     }
 
     @Test
+    public void testGetConfigurationPropertyById() {
+        Long configId = 1L;
+        GlobalConfigurationPropertyData configuration = assertDoesNotThrow(
+                () -> globalConfigurationHelper.getGlobalConfigurationById(configId));
+        assertTrue(StringUtils.isNotBlank(configuration.getName()));
+    }
+
+    @Test
+    public void testNotExistingConfigurationProperty() {
+        String notExistingConfigName = "not-existing-configuration";
+        CallFailedRuntimeException exception = assertThrows(CallFailedRuntimeException.class,
+                () -> globalConfigurationHelper.getGlobalConfigurationByName(notExistingConfigName));
+        assertEquals(404, exception.getResponse().code());
+    }
+
+    @Test
     public void testPasswordUpdateFailing() {
         String configName = GlobalConfigurationConstants.FORCE_PASSWORD_RESET_DAYS;
         GlobalConfigurationPropertyData config = globalConfigurationHelper.getGlobalConfigurationByName(configName);
@@ -106,5 +112,67 @@ public class GlobalConfigurationTest {
                 .updateGlobalConfiguration(configName, new PutGlobalConfigurationsRequest().enabled(true).value(null)));
         assertEquals(403, exception.getResponse().code());
         assertTrue(exception.getMessage().contains("error.msg.password.reset.days.value.must.be.greater.than.zero"));
+    }
+
+    @Test
+    public void testOriginatorCreationConfigurationExists() {
+        String configName = GlobalConfigurationConstants.ENABLE_ORIGINATOR_CREATION_DURING_LOAN_APPLICATION;
+        GlobalConfigurationPropertyData config = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+
+        Assertions.assertNotNull(config, "Configuration should exist");
+        assertEquals(configName, config.getName(), "Configuration name should match");
+        assertEquals(false, config.getEnabled(), "Configuration should be disabled by default");
+        assertEquals(false, config.getTrapDoor(), "Configuration should not be a trap door");
+    }
+
+    @Test
+    public void testOriginatorCreationConfigurationCanBeEnabled() {
+        String configName = GlobalConfigurationConstants.ENABLE_ORIGINATOR_CREATION_DURING_LOAN_APPLICATION;
+        GlobalConfigurationPropertyData config = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+        Assertions.assertNotNull(config);
+
+        try {
+            globalConfigurationHelper.updateGlobalConfiguration(configName, new PutGlobalConfigurationsRequest().enabled(true));
+            GlobalConfigurationPropertyData enabledConfig = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+            assertEquals(true, enabledConfig.getEnabled(), "Configuration should be enabled after update");
+
+            globalConfigurationHelper.updateGlobalConfiguration(configName, new PutGlobalConfigurationsRequest().enabled(false));
+            GlobalConfigurationPropertyData disabledConfig = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+            assertEquals(false, disabledConfig.getEnabled(), "Configuration should be disabled after update");
+        } finally {
+            globalConfigurationHelper.updateGlobalConfiguration(configName,
+                    new PutGlobalConfigurationsRequest().enabled(config.getEnabled()));
+        }
+    }
+
+    @Test
+    public void testInstantDelinquencyCalculationConfigurationExists() {
+        String configName = GlobalConfigurationConstants.ENABLE_INSTANT_DELINQUENCY_CALCULATION;
+        GlobalConfigurationPropertyData config = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+
+        Assertions.assertNotNull(config, "Configuration should exist");
+        assertEquals(configName, config.getName(), "Configuration name should match");
+        assertEquals(true, config.getEnabled(), "Configuration should be enabled by default");
+        assertEquals(false, config.getTrapDoor(), "Configuration should not be a trap door");
+    }
+
+    @Test
+    public void testInstantDelinquencyCalculationConfigurationCanBeEnabled() {
+        String configName = GlobalConfigurationConstants.ENABLE_INSTANT_DELINQUENCY_CALCULATION;
+        GlobalConfigurationPropertyData config = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+        Assertions.assertNotNull(config);
+
+        try {
+            globalConfigurationHelper.updateGlobalConfiguration(configName, new PutGlobalConfigurationsRequest().enabled(true));
+            GlobalConfigurationPropertyData enabledConfig = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+            assertEquals(true, enabledConfig.getEnabled(), "Configuration should be enabled after update");
+
+            globalConfigurationHelper.updateGlobalConfiguration(configName, new PutGlobalConfigurationsRequest().enabled(false));
+            GlobalConfigurationPropertyData disabledConfig = globalConfigurationHelper.getGlobalConfigurationByName(configName);
+            assertEquals(false, disabledConfig.getEnabled(), "Configuration should be disabled after update");
+        } finally {
+            globalConfigurationHelper.updateGlobalConfiguration(configName,
+                    new PutGlobalConfigurationsRequest().enabled(config.getEnabled()));
+        }
     }
 }

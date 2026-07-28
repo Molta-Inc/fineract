@@ -27,9 +27,7 @@ import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -47,7 +45,6 @@ import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDa
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
-import org.apache.fineract.infrastructure.documentmanagement.domain.Image;
 import org.apache.fineract.infrastructure.security.service.RandomPasswordGenerator;
 import org.apache.fineract.organisation.office.domain.Office;
 import org.apache.fineract.organisation.staff.domain.Staff;
@@ -73,13 +70,9 @@ public class Client extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @JoinColumn(name = "transfer_to_office_id")
     private Office transferToOffice;
 
-    @OneToOne(optional = true)
-    @JoinColumn(name = "image_id")
-    private Image image;
+    @Column(name = "image_id")
+    private Long imageId;
 
-    /**
-     * A value from {@link ClientStatus}.
-     */
     @Column(name = "status_enum", nullable = false)
     private Integer status;
 
@@ -134,9 +127,6 @@ public class Client extends AbstractAuditableWithUTCDateTimeCustom<Long> {
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "m_group_client", joinColumns = @JoinColumn(name = "client_id"), inverseJoinColumns = @JoinColumn(name = "group_id"))
     private Set<Group> groups;
-
-    @Transient
-    private boolean accountNumberRequiresAutoGeneration = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "closure_reason_cv_id")
@@ -237,7 +227,6 @@ public class Client extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
         if (StringUtils.isBlank(accountNo)) {
             this.accountNumber = new RandomPasswordGenerator(19).generate();
-            this.accountNumberRequiresAutoGeneration = true;
         } else {
             this.accountNumber = accountNo;
         }
@@ -327,21 +316,12 @@ public class Client extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     }
 
-    public boolean isAccountNumberRequiresAutoGeneration() {
-        return this.accountNumberRequiresAutoGeneration;
-    }
-
-    public void setAccountNumberRequiresAutoGeneration(final boolean accountNumberRequiresAutoGeneration) {
-        this.accountNumberRequiresAutoGeneration = accountNumberRequiresAutoGeneration;
-    }
-
     public boolean identifiedBy(final Long clientId) {
         return getId().equals(clientId);
     }
 
     public void updateAccountNo(final String accountIdentifier) {
         this.accountNumber = accountIdentifier;
-        this.accountNumberRequiresAutoGeneration = false;
     }
 
     public void activate(final AppUser currentUser, final DateTimeFormatter formatter, final LocalDate activationLocalDate) {
@@ -508,10 +488,6 @@ public class Client extends AbstractAuditableWithUTCDateTimeCustom<Long> {
         return this.office.getId();
     }
 
-    public void setImage(final Image image) {
-        this.image = image;
-    }
-
     public String mobileNo() {
         return this.mobileNo;
     }
@@ -522,10 +498,6 @@ public class Client extends AbstractAuditableWithUTCDateTimeCustom<Long> {
 
     public void setMobileNo(final String mobileNo) {
         this.mobileNo = mobileNo;
-    }
-
-    public boolean isNotStaff() {
-        return !isStaff();
     }
 
     public boolean isStaff() {

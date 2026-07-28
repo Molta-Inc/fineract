@@ -19,8 +19,8 @@
 package org.apache.fineract.integrationtests;
 
 import static java.lang.System.lineSeparator;
-import static org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType.BUSINESS_DATE;
 import static org.apache.fineract.integrationtests.BaseLoanIntegrationTest.TransactionProcessingStrategyCode.ADVANCED_PAYMENT_ALLOCATION_STRATEGY;
+import static org.apache.fineract.integrationtests.common.loans.LoanApplicationTestBuilder.DUE_PENALTY_FEE_INTEREST_PRINCIPAL_IN_ADVANCE_PRINCIPAL_PENALTY_FEE_INTEREST_STRATEGY;
 import static org.apache.fineract.integrationtests.common.loans.LoanApplicationTestBuilder.DUE_PENALTY_INTEREST_PRINCIPAL_FEE_IN_ADVANCE_PENALTY_INTEREST_PRINCIPAL_FEE_STRATEGY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -59,18 +59,21 @@ import org.apache.fineract.batch.domain.BatchRequest;
 import org.apache.fineract.batch.domain.BatchResponse;
 import org.apache.fineract.client.models.AdvancedPaymentData;
 import org.apache.fineract.client.models.AllowAttributeOverrides;
-import org.apache.fineract.client.models.BusinessDateRequest;
+import org.apache.fineract.client.models.BusinessDateUpdateRequest;
 import org.apache.fineract.client.models.GetJournalEntriesTransactionIdResponse;
+import org.apache.fineract.client.models.GetLoansLoanIdChargesChargeIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdRepaymentPeriod;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdStatus;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactions;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactionsTemplateResponse;
 import org.apache.fineract.client.models.JournalEntryTransactionItem;
+import org.apache.fineract.client.models.LoanApprovedAmountHistoryData;
 import org.apache.fineract.client.models.LoanPointInTimeData;
 import org.apache.fineract.client.models.PaymentAllocationOrder;
 import org.apache.fineract.client.models.PostChargesResponse;
 import org.apache.fineract.client.models.PostLoanProductsRequest;
+import org.apache.fineract.client.models.PostLoansLoanIdChargesRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdChargesResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdResponse;
@@ -79,17 +82,23 @@ import org.apache.fineract.client.models.PostLoansLoanIdTransactionsResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsTransactionIdRequest;
 import org.apache.fineract.client.models.PostLoansRequest;
 import org.apache.fineract.client.models.PostLoansResponse;
-import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
+import org.apache.fineract.client.models.PostRolesRequest;
+import org.apache.fineract.client.models.PostUsersRequest;
+import org.apache.fineract.client.models.PutLoanProductsProductIdRequest;
+import org.apache.fineract.client.models.PutLoansApprovedAmountRequest;
+import org.apache.fineract.client.models.PutLoansApprovedAmountResponse;
+import org.apache.fineract.client.models.PutLoansAvailableDisbursementAmountRequest;
+import org.apache.fineract.client.models.PutLoansAvailableDisbursementAmountResponse;
 import org.apache.fineract.client.models.PutLoansLoanIdResponse;
+import org.apache.fineract.client.models.PutRolesRoleIdPermissionsRequest;
 import org.apache.fineract.client.models.RetrieveLoansPointInTimeRequest;
 import org.apache.fineract.client.util.CallFailedRuntimeException;
 import org.apache.fineract.client.util.Calls;
-import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
+import org.apache.fineract.client.util.FineractClient;
+import org.apache.fineract.infrastructure.event.external.data.ExternalEventResponse;
 import org.apache.fineract.integrationtests.client.IntegrationTest;
 import org.apache.fineract.integrationtests.common.BatchHelper;
-import org.apache.fineract.integrationtests.common.BusinessDateHelper;
 import org.apache.fineract.integrationtests.common.ClientHelper;
-import org.apache.fineract.integrationtests.common.GlobalConfigurationHelper;
 import org.apache.fineract.integrationtests.common.SchedulerJobHelper;
 import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.integrationtests.common.accounting.Account;
@@ -97,6 +106,9 @@ import org.apache.fineract.integrationtests.common.accounting.AccountHelper;
 import org.apache.fineract.integrationtests.common.accounting.JournalEntryHelper;
 import org.apache.fineract.integrationtests.common.charges.ChargesHelper;
 import org.apache.fineract.integrationtests.common.error.ErrorResponse;
+import org.apache.fineract.integrationtests.common.externalevents.BusinessEvent;
+import org.apache.fineract.integrationtests.common.externalevents.ExternalEventHelper;
+import org.apache.fineract.integrationtests.common.externalevents.ExternalEventsExtension;
 import org.apache.fineract.integrationtests.common.loans.LoanAccountLockHelper;
 import org.apache.fineract.integrationtests.common.loans.LoanProductHelper;
 import org.apache.fineract.integrationtests.common.loans.LoanProductTestBuilder;
@@ -115,12 +127,12 @@ import org.hamcrest.Matcher;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.extension.ExtendWith;
+import retrofit2.Call;
+import retrofit2.Response;
 
 @Slf4j
-@ExtendWith(LoanTestLifecycleExtension.class)
+@ExtendWith({ LoanTestLifecycleExtension.class, ExternalEventsExtension.class })
 public abstract class BaseLoanIntegrationTest extends IntegrationTest {
-
-    protected static final String DATETIME_PATTERN = "dd MMMM yyyy";
 
     static {
         Utils.initializeRESTAssured();
@@ -156,40 +168,39 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
     protected final Account writtenOffAccount = accountHelper.createExpenseAccount("writtenOffAccount");
     protected final Account goodwillExpenseAccount = accountHelper.createExpenseAccount("goodwillExpenseAccount");
     protected final Account goodwillIncomeAccount = accountHelper.createIncomeAccount("goodwillIncomeAccount");
+    protected final Account deferredIncomeLiabilityAccount = accountHelper.createLiabilityAccount("deferredIncomeLiabilityAccount");
+    protected final Account buyDownExpenseAccount = accountHelper.createExpenseAccount("buyDownExpenseAccount");
     protected final LoanTransactionHelper loanTransactionHelper = new LoanTransactionHelper(requestSpec, responseSpec);
     protected JournalEntryHelper journalEntryHelper = new JournalEntryHelper(requestSpec, responseSpec);
     protected ClientHelper clientHelper = new ClientHelper(requestSpec, responseSpec);
     protected SchedulerJobHelper schedulerJobHelper = new SchedulerJobHelper(requestSpec);
     protected final InlineLoanCOBHelper inlineLoanCOBHelper = new InlineLoanCOBHelper(requestSpec, responseSpec);
-    protected final LoanAccountLockHelper loanAccountLockHelper = new LoanAccountLockHelper(requestSpec,
-            createResponseSpecification(Matchers.is(202)));
-    protected BusinessDateHelper businessDateHelper = new BusinessDateHelper();
     protected DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern(DATETIME_PATTERN);
-    protected GlobalConfigurationHelper globalConfigurationHelper = new GlobalConfigurationHelper();
     protected final CodeHelper codeHelper = new CodeHelper();
     protected final ChargesHelper chargesHelper = new ChargesHelper();
+    protected final ExternalEventHelper externalEventHelper = new ExternalEventHelper();
 
     protected static void validateRepaymentPeriod(GetLoansLoanIdResponse loanDetails, Integer index, LocalDate dueDate, double principalDue,
             double principalPaid, double principalOutstanding, double paidInAdvance, double paidLate) {
         GetLoansLoanIdRepaymentPeriod period = loanDetails.getRepaymentSchedule().getPeriods().stream()
                 .filter(p -> Objects.equals(p.getPeriod(), index)).findFirst().orElseThrow();
         assertEquals(dueDate, period.getDueDate());
-        assertEquals(principalDue, period.getPrincipalDue());
-        assertEquals(principalPaid, period.getPrincipalPaid());
-        assertEquals(principalOutstanding, period.getPrincipalOutstanding());
-        assertEquals(paidInAdvance, period.getTotalPaidInAdvanceForPeriod());
-        assertEquals(paidLate, period.getTotalPaidLateForPeriod());
+        assertEquals(principalDue, Utils.getDoubleValue(period.getPrincipalDue()));
+        assertEquals(principalPaid, Utils.getDoubleValue(period.getPrincipalPaid()));
+        assertEquals(principalOutstanding, Utils.getDoubleValue(period.getPrincipalOutstanding()));
+        assertEquals(paidInAdvance, Utils.getDoubleValue(period.getTotalPaidInAdvanceForPeriod()));
+        assertEquals(paidLate, Utils.getDoubleValue(period.getTotalPaidLateForPeriod()));
     }
 
     protected static void validateRepaymentPeriod(GetLoansLoanIdResponse loanDetails, Integer index, double principalDue,
             double principalPaid, double principalOutstanding, double paidInAdvance, double paidLate) {
         GetLoansLoanIdRepaymentPeriod period = loanDetails.getRepaymentSchedule().getPeriods().stream()
                 .filter(p -> Objects.equals(p.getPeriod(), index)).findFirst().orElseThrow();
-        assertEquals(principalDue, period.getPrincipalDue());
-        assertEquals(principalPaid, period.getPrincipalPaid());
-        assertEquals(principalOutstanding, period.getPrincipalOutstanding());
-        assertEquals(paidInAdvance, period.getTotalPaidInAdvanceForPeriod());
-        assertEquals(paidLate, period.getTotalPaidLateForPeriod());
+        assertEquals(principalDue, Utils.getDoubleValue(period.getPrincipalDue()));
+        assertEquals(principalPaid, Utils.getDoubleValue(period.getPrincipalPaid()));
+        assertEquals(principalOutstanding, Utils.getDoubleValue(period.getPrincipalOutstanding()));
+        assertEquals(paidInAdvance, Utils.getDoubleValue(period.getTotalPaidInAdvanceForPeriod()));
+        assertEquals(paidLate, Utils.getDoubleValue(period.getTotalPaidLateForPeriod()));
     }
 
     protected static void validateFullyUnpaidRepaymentPeriod(GetLoansLoanIdResponse loanDetails, Integer index, String dueDate,
@@ -230,20 +241,20 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         GetLoansLoanIdRepaymentPeriod period = loanDetails.getRepaymentSchedule().getPeriods().stream()
                 .filter(p -> Objects.equals(p.getPeriod(), index)).findFirst().orElseThrow();
         assertEquals(dueDate, period.getDueDate());
-        assertEquals(principalDue, period.getPrincipalDue());
-        assertEquals(principalPaid, period.getPrincipalPaid());
-        assertEquals(principalOutstanding, period.getPrincipalOutstanding());
-        assertEquals(feeDue, period.getFeeChargesDue());
-        assertEquals(feePaid, period.getFeeChargesPaid());
-        assertEquals(feeOutstanding, period.getFeeChargesOutstanding());
-        assertEquals(penaltyDue, period.getPenaltyChargesDue());
-        assertEquals(penaltyPaid, period.getPenaltyChargesPaid());
-        assertEquals(penaltyOutstanding, period.getPenaltyChargesOutstanding());
-        assertEquals(interestDue, period.getInterestDue());
-        assertEquals(interestPaid, period.getInterestPaid());
-        assertEquals(interestOutstanding, period.getInterestOutstanding());
-        assertEquals(paidInAdvance, period.getTotalPaidInAdvanceForPeriod());
-        assertEquals(paidLate, period.getTotalPaidLateForPeriod());
+        assertEquals(principalDue, Utils.getDoubleValue(period.getPrincipalDue()));
+        assertEquals(principalPaid, Utils.getDoubleValue(period.getPrincipalPaid()));
+        assertEquals(principalOutstanding, Utils.getDoubleValue(period.getPrincipalOutstanding()));
+        assertEquals(feeDue, Utils.getDoubleValue(period.getFeeChargesDue()));
+        assertEquals(feePaid, Utils.getDoubleValue(period.getFeeChargesPaid()));
+        assertEquals(feeOutstanding, Utils.getDoubleValue(period.getFeeChargesOutstanding()));
+        assertEquals(penaltyDue, Utils.getDoubleValue(period.getPenaltyChargesDue()));
+        assertEquals(penaltyPaid, Utils.getDoubleValue(period.getPenaltyChargesPaid()));
+        assertEquals(penaltyOutstanding, Utils.getDoubleValue(period.getPenaltyChargesOutstanding()));
+        assertEquals(interestDue, Utils.getDoubleValue(period.getInterestDue()));
+        assertEquals(interestPaid, Utils.getDoubleValue(period.getInterestPaid()));
+        assertEquals(interestOutstanding, Utils.getDoubleValue(period.getInterestOutstanding()));
+        assertEquals(paidInAdvance, Utils.getDoubleValue(period.getTotalPaidInAdvanceForPeriod()));
+        assertEquals(paidLate, Utils.getDoubleValue(period.getTotalPaidLateForPeriod()));
     }
 
     /**
@@ -273,7 +284,8 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
     }
 
     protected GetLoansLoanIdTransactionsTemplateResponse getPrepayAmount(Long loanId, String date) {
-        return ok(fineractClient().loanTransactions.retrieveTransactionTemplate(loanId, "prepayLoan", DATETIME_PATTERN, date, "en"));
+        return ok(fineractClient().loanTransactions.retrieveTemplateLoanTransaction(loanId, "prepayLoan", DATETIME_PATTERN, date, "en",
+                null));
     }
 
     protected Long verifyPrepayAmountByRepayment(Long loanId, String date) {
@@ -291,6 +303,86 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         return repaymentId;
     }
 
+    /**
+     * Executes a Loan transaction request by a user created with no permissions then verifies it fails with
+     * authentication error. Then alters user permissions to get the given permission then executes the query again. It
+     * verifies that it returns with no error.
+     *
+     * @param loanId
+     *            loan id
+     * @param postLoansLoanIdTransactionsRequest
+     *            transaction request
+     * @param command
+     *            the command for loan transaction
+     * @param permission
+     *            the given permission related to the loan transaction
+     * @return Result body
+     */
+    public PostLoansLoanIdTransactionsResponse makeLoanTransactionWithPermissionVerification(final Long loanId,
+            PostLoansLoanIdTransactionsRequest postLoansLoanIdTransactionsRequest, final String command, final String permission) {
+        return performPermissionTestForRequest(permission, fineractClient -> fineractClient.loanTransactions
+                .handleCommandsLoanTransaction(loanId, postLoansLoanIdTransactionsRequest, command));
+    }
+
+    /**
+     * Executes a Loan transaction adjustment request by a user created with no permissions then verifies it fails with
+     * authentication error. Then alters user permissions to get the given permission then executes the query again. It
+     * verifies that it returns with no error.
+     *
+     * @param loanId
+     *            loan ID
+     * @param transactionIdToAdjust
+     *            transaction ID to adjust
+     * @param postLoansLoanIdTransactionsRequest
+     *            transaction request
+     * @param command
+     *            the command for loan transaction
+     * @param permission
+     *            the given permission related to the loan transaction
+     * @return Result body
+     */
+    public PostLoansLoanIdTransactionsResponse adjustLoanTransactionWithPermissionVerification(final Long loanId,
+            final Long transactionIdToAdjust, PostLoansLoanIdTransactionsTransactionIdRequest postLoansLoanIdTransactionsRequest,
+            final String command, final String permission) {
+        return performPermissionTestForRequest(permission, fineractClient -> fineractClient.loanTransactions.adjustLoanTransaction(loanId,
+                transactionIdToAdjust, postLoansLoanIdTransactionsRequest, command));
+    }
+
+    public <T> T performPermissionTestForRequest(final String permission, Function<FineractClient, Call<T>> callback) {
+        // create role
+        String roleName = Utils.uniqueRandomStringGenerator("TEST_ROLE_", 10);
+        Long roleId = Calls
+                .ok(fineractClient().roles.createRole(new PostRolesRequest().name(roleName).description("Test role Description")))
+                .getResourceId();
+
+        Calls.ok(fineractClient().roles.updateRolePermissions(roleId,
+                new PutRolesRoleIdPermissionsRequest().putPermissionsItem(permission, false)));
+        // create user with role
+        String firstname = Utils.randomFirstNameGenerator();
+        String lastname = Utils.randomLastNameGenerator();
+        String userName = Utils.uniqueRandomStringGenerator("testUserName", 4);
+        String password = "AKleRbDhK421$";
+        String email = firstname + "." + lastname + "@whatever.mifos.org";
+        Calls.ok(fineractClient().users
+                .createUser(new PostUsersRequest().addRolesItem(roleId).email(email).firstname(firstname).lastname(lastname)
+                        .repeatPassword(password).sendPasswordToEmail(false).officeId(1L).username(userName).password(password)));
+
+        // login user
+        FineractClient fineractClientOfUser = newFineractClient(userName, password);
+
+        // try to make transaction - should fail
+        Response<T> responseFail = Calls.executeU(callback.apply(fineractClientOfUser));
+        Assertions.assertEquals(403, responseFail.code());
+
+        // edit role to have permission for transaction
+        Calls.ok(fineractClient().roles.updateRolePermissions(roleId,
+                new PutRolesRoleIdPermissionsRequest().putPermissionsItem(permission, true)));
+        // try to make transaction - should pass
+        Response<T> responseOk = Calls.executeU(callback.apply(fineractClientOfUser));
+        Assertions.assertEquals(200, responseOk.code());
+        return responseOk.body();
+    }
+
     private String getNonByPassUserAuthKey(RequestSpecification requestSpec, ResponseSpecification responseSpec) {
         // creates the user
         UserHelper.getSimpleUserWithoutBypassPermission(requestSpec, responseSpec);
@@ -305,8 +397,8 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         return createOnePeriod30DaysPeriodicAccrualProduct((double) 0);
     }
 
-    protected PostLoanProductsRequest create4IProgressive() {
-        final Integer delinquencyBucketId = DelinquencyBucketsHelper.createDelinquencyBucket(requestSpec, responseSpec);
+    protected PostLoanProductsRequest create4ICumulative() {
+        final Long delinquencyBucketId = DelinquencyBucketsHelper.createDefaultBucket();
         Assertions.assertNotNull(delinquencyBucketId);
 
         return new PostLoanProductsRequest().name(Utils.uniqueRandomStringGenerator("4I_PROGRESSIVE_", 6))//
@@ -332,7 +424,205 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 .amortizationType(AmortizationType.EQUAL_INSTALLMENTS)//
                 .interestType(InterestType.DECLINING_BALANCE)//
                 .interestCalculationPeriodType(InterestCalculationPeriodType.DAILY)//
-                .allowPartialPeriodInterestCalcualtion(false)//
+                .allowPartialPeriodInterestCalculation(false)//
+                .creditAllocation(List.of())//
+                .overdueDaysForNPA(179)//
+                .daysInMonthType(30)//
+                .daysInYearType(360)//
+                .isInterestRecalculationEnabled(true)//
+                .interestRecalculationCompoundingMethod(0)//
+                .rescheduleStrategyMethod(RescheduleStrategyMethod.RESCHEDULE_NEXT_REPAYMENTS)//
+                .recalculationRestFrequencyType(RecalculationRestFrequencyType.DAILY)//
+                .recalculationRestFrequencyInterval(1)//
+                .isArrearsBasedOnOriginalSchedule(false)//
+                .isCompoundingToBePostedAsTransaction(false)//
+                .preClosureInterestCalculationStrategy(1)//
+                .allowCompoundingOnEod(false)//
+                .canDefineInstallmentAmount(true)//
+                .repaymentStartDateType(1)//
+                .charges(List.of())//
+                .principalVariationsForBorrowerCycle(List.of())//
+                .interestRateVariationsForBorrowerCycle(List.of())//
+                .numberOfRepaymentVariationsForBorrowerCycle(List.of())//
+                .accountingRule(3)//
+                .canUseForTopup(false)//
+                .fundSourceAccountId(fundSource.getAccountID().longValue())//
+                .loanPortfolioAccountId(loansReceivableAccount.getAccountID().longValue())//
+                .transfersInSuspenseAccountId(suspenseAccount.getAccountID().longValue())//
+                .interestOnLoanAccountId(interestIncomeAccount.getAccountID().longValue())//
+                .incomeFromFeeAccountId(feeIncomeAccount.getAccountID().longValue())//
+                .incomeFromPenaltyAccountId(penaltyIncomeAccount.getAccountID().longValue())//
+                .incomeFromRecoveryAccountId(recoveriesAccount.getAccountID().longValue())//
+                .writeOffAccountId(writtenOffAccount.getAccountID().longValue())//
+                .overpaymentLiabilityAccountId(overpaymentAccount.getAccountID().longValue())//
+                .receivableInterestAccountId(interestReceivableAccount.getAccountID().longValue())//
+                .receivableFeeAccountId(feeReceivableAccount.getAccountID().longValue())//
+                .receivablePenaltyAccountId(penaltyReceivableAccount.getAccountID().longValue())//
+                .goodwillCreditAccountId(goodwillExpenseAccount.getAccountID().longValue())//
+                .incomeFromGoodwillCreditInterestAccountId(interestIncomeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromGoodwillCreditFeesAccountId(feeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromGoodwillCreditPenaltyAccountId(feeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromChargeOffInterestAccountId(interestIncomeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromChargeOffFeesAccountId(feeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromChargeOffPenaltyAccountId(penaltyChargeOffAccount.getAccountID().longValue())//
+                .chargeOffExpenseAccountId(chargeOffExpenseAccount.getAccountID().longValue())//
+                .chargeOffFraudExpenseAccountId(chargeOffFraudExpenseAccount.getAccountID().longValue())//
+                .dateFormat(DATETIME_PATTERN)//
+                .locale("en")//
+                .enableAccrualActivityPosting(false)//
+                .multiDisburseLoan(true)//
+                .maxTrancheCount(10)//
+                .outstandingLoanBalance(10000.0)//
+                .disallowExpectedDisbursements(true)//
+                .allowApprovedDisbursedAmountsOverApplied(true)//
+                .overAppliedCalculationType("percentage")//
+                .overAppliedNumber(50)//
+                .principalThresholdForLastInstallment(50)//
+                .holdGuaranteeFunds(false)//
+                .accountMovesOutOfNPAOnlyOnArrearsCompletion(false)//
+                .allowAttributeOverrides(new AllowAttributeOverrides()//
+                        .amortizationType(true)//
+                        .interestType(true)//
+                        .transactionProcessingStrategyCode(true)//
+                        .interestCalculationPeriodType(true)//
+                        .inArrearsTolerance(true)//
+                        .repaymentEvery(true)//
+                        .graceOnPrincipalAndInterestPayment(true)//
+                        .graceOnArrearsAgeing(true)//
+                ).isEqualAmortization(false)//
+                .delinquencyBucketId(delinquencyBucketId.longValue())//
+                .enableDownPayment(false)//
+                .enableInstallmentLevelDelinquency(false)//
+                .transactionProcessingStrategyCode(
+                        LoanProductTestBuilder.DUE_PENALTY_FEE_INTEREST_PRINCIPAL_IN_ADVANCE_PRINCIPAL_PENALTY_FEE_INTEREST_STRATEGY)//
+                .loanScheduleType(LoanScheduleType.CUMULATIVE.toString());//
+    }
+
+    protected PutLoanProductsProductIdRequest update4IProgressive(String name, String shortName, Long delinquencyBucketId) {
+        return new PutLoanProductsProductIdRequest().name(name).shortName(shortName).description("4 installment product - progressive")//
+                .includeInBorrowerCycle(false)//
+                .useBorrowerCycle(false)//
+                .currencyCode("EUR")//
+                .digitsAfterDecimal(2)//
+                .principal(1000.0)//
+                .minPrincipal(100.0)//
+                .maxPrincipal(10000.0)//
+                .numberOfRepayments(4)//
+                .repaymentEvery(1)//
+                .repaymentFrequencyType(RepaymentFrequencyType.MONTHS_L.intValue())//
+                .interestRatePerPeriod(10D)//
+                .minInterestRatePerPeriod(0D)//
+                .maxInterestRatePerPeriod(120D)//
+                .interestRateFrequencyType(InterestRateFrequencyType.YEARS)//
+                .isLinkedToFloatingInterestRates(false)//
+                .isLinkedToFloatingInterestRates(false)//
+                .allowVariableInstallments(false)//
+                .amortizationType(AmortizationType.EQUAL_INSTALLMENTS)//
+                .interestType(InterestType.DECLINING_BALANCE)//
+                .interestCalculationPeriodType(InterestCalculationPeriodType.DAILY)//
+                .allowPartialPeriodInterestCalculation(false)//
+                .transactionProcessingStrategyCode(ADVANCED_PAYMENT_ALLOCATION_STRATEGY)//
+                .paymentAllocation(List.of(createDefaultPaymentAllocation("NEXT_INSTALLMENT")))//
+                .creditAllocation(List.of())//
+                .overdueDaysForNPA(179)//
+                .daysInMonthType(30L)//
+                .daysInYearType(360L)//
+                .isInterestRecalculationEnabled(true)//
+                .interestRecalculationCompoundingMethod(0)//
+                .rescheduleStrategyMethod(RescheduleStrategyMethod.ADJUST_LAST_UNPAID_PERIOD)//
+                .recalculationRestFrequencyType(RecalculationRestFrequencyType.DAILY)//
+                .recalculationRestFrequencyInterval(1)//
+                .isArrearsBasedOnOriginalSchedule(false)//
+                .isCompoundingToBePostedAsTransaction(false)//
+                .preClosureInterestCalculationStrategy(1)//
+                .allowCompoundingOnEod(false)//
+                .canDefineInstallmentAmount(true)//
+                .repaymentStartDateType(1)//
+                .charges(List.of())//
+                .principalVariationsForBorrowerCycle(List.of())//
+                .interestRateVariationsForBorrowerCycle(List.of())//
+                .numberOfRepaymentVariationsForBorrowerCycle(List.of())//
+                .accountingRule(3)//
+                .canUseForTopup(false)//
+                .fundSourceAccountId(fundSource.getAccountID().longValue())//
+                .loanPortfolioAccountId(loansReceivableAccount.getAccountID().longValue())//
+                .transfersInSuspenseAccountId(suspenseAccount.getAccountID().longValue())//
+                .interestOnLoanAccountId(interestIncomeAccount.getAccountID().longValue())//
+                .incomeFromFeeAccountId(feeIncomeAccount.getAccountID().longValue())//
+                .incomeFromPenaltyAccountId(penaltyIncomeAccount.getAccountID().longValue())//
+                .incomeFromRecoveryAccountId(recoveriesAccount.getAccountID().longValue())//
+                .writeOffAccountId(writtenOffAccount.getAccountID().longValue())//
+                .overpaymentLiabilityAccountId(overpaymentAccount.getAccountID().longValue())//
+                .receivableInterestAccountId(interestReceivableAccount.getAccountID().longValue())//
+                .receivableFeeAccountId(feeReceivableAccount.getAccountID().longValue())//
+                .receivablePenaltyAccountId(penaltyReceivableAccount.getAccountID().longValue())//
+                .goodwillCreditAccountId(goodwillExpenseAccount.getAccountID().longValue())//
+                .incomeFromGoodwillCreditInterestAccountId(interestIncomeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromGoodwillCreditFeesAccountId(feeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromGoodwillCreditPenaltyAccountId(feeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromChargeOffInterestAccountId(interestIncomeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromChargeOffFeesAccountId(feeChargeOffAccount.getAccountID().longValue())//
+                .incomeFromChargeOffPenaltyAccountId(penaltyChargeOffAccount.getAccountID().longValue())//
+                .chargeOffExpenseAccountId(chargeOffExpenseAccount.getAccountID().longValue())//
+                .chargeOffFraudExpenseAccountId(chargeOffFraudExpenseAccount.getAccountID().longValue())//
+                .dateFormat(DATETIME_PATTERN)//
+                .locale("en")//
+                .enableAccrualActivityPosting(false)//
+                .multiDisburseLoan(true)//
+                .maxTrancheCount(10)//
+                .outstandingLoanBalance(10000.0)//
+                .disallowExpectedDisbursements(true)//
+                .allowApprovedDisbursedAmountsOverApplied(true)//
+                .overAppliedCalculationType("percentage")//
+                .overAppliedNumber(50)//
+                .principalThresholdForLastInstallment(50)//
+                .holdGuaranteeFunds(false)//
+                .accountMovesOutOfNPAOnlyOnArrearsCompletion(false)//
+                .allowAttributeOverrides(new AllowAttributeOverrides()//
+                        .amortizationType(true)//
+                        .interestType(true)//
+                        .transactionProcessingStrategyCode(true)//
+                        .interestCalculationPeriodType(true)//
+                        .inArrearsTolerance(true)//
+                        .repaymentEvery(true)//
+                        .graceOnPrincipalAndInterestPayment(true)//
+                        .graceOnArrearsAgeing(true)//
+                ).isEqualAmortization(false)//
+                .delinquencyBucketId(delinquencyBucketId)//
+                .enableDownPayment(false)//
+                .enableInstallmentLevelDelinquency(false)//
+                .loanScheduleType("PROGRESSIVE")//
+                .loanScheduleProcessingType("HORIZONTAL");
+    }
+
+    protected PostLoanProductsRequest create4IProgressive() {
+        final Long delinquencyBucketId = DelinquencyBucketsHelper.createDefaultBucket();
+        Assertions.assertNotNull(delinquencyBucketId);
+
+        return new PostLoanProductsRequest().name(Utils.uniqueRandomStringGenerator("4I_PROGRESSIVE_", 6))//
+                .shortName(Utils.uniqueRandomStringGenerator("", 4))//
+                .description("4 installment product - progressive")//
+                .includeInBorrowerCycle(false)//
+                .useBorrowerCycle(false)//
+                .currencyCode("EUR")//
+                .digitsAfterDecimal(2)//
+                .principal(1000.0)//
+                .minPrincipal(100.0)//
+                .maxPrincipal(10000.0)//
+                .numberOfRepayments(4)//
+                .repaymentEvery(1)//
+                .repaymentFrequencyType(RepaymentFrequencyType.MONTHS_L)//
+                .interestRatePerPeriod(10D)//
+                .minInterestRatePerPeriod(0D)//
+                .maxInterestRatePerPeriod(120D)//
+                .interestRateFrequencyType(InterestRateFrequencyType.YEARS)//
+                .isLinkedToFloatingInterestRates(false)//
+                .isLinkedToFloatingInterestRates(false)//
+                .allowVariableInstallments(false)//
+                .amortizationType(AmortizationType.EQUAL_INSTALLMENTS)//
+                .interestType(InterestType.DECLINING_BALANCE)//
+                .interestCalculationPeriodType(InterestCalculationPeriodType.DAILY)//
+                .allowPartialPeriodInterestCalculation(false)//
                 .transactionProcessingStrategyCode(ADVANCED_PAYMENT_ALLOCATION_STRATEGY)//
                 .paymentAllocation(List.of(createDefaultPaymentAllocation("NEXT_INSTALLMENT")))//
                 .creditAllocation(List.of())//
@@ -342,8 +632,8 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 .isInterestRecalculationEnabled(true)//
                 .interestRecalculationCompoundingMethod(0)//
                 .rescheduleStrategyMethod(RescheduleStrategyMethod.ADJUST_LAST_UNPAID_PERIOD)//
-                .recalculationRestFrequencyType(RecalculationRestFrequencyType.SAME_AS_REPAYMENT_PERIOD)//
-                .recalculationRestFrequencyInterval(0)//
+                .recalculationRestFrequencyType(RecalculationRestFrequencyType.DAILY)//
+                .recalculationRestFrequencyInterval(1)//
                 .isArrearsBasedOnOriginalSchedule(false)//
                 .isCompoundingToBePostedAsTransaction(false)//
                 .preClosureInterestCalculationStrategy(1)//
@@ -407,6 +697,15 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 .loanScheduleProcessingType("HORIZONTAL");//
     }
 
+    protected PostLoanProductsRequest create4IProgressiveWithCapitalizedIncome() {
+        return create4IProgressive().enableIncomeCapitalization(true)//
+                .capitalizedIncomeCalculationType(PostLoanProductsRequest.CapitalizedIncomeCalculationTypeEnum.FLAT)//
+                .capitalizedIncomeStrategy(PostLoanProductsRequest.CapitalizedIncomeStrategyEnum.EQUAL_AMORTIZATION)//
+                .deferredIncomeLiabilityAccountId(deferredIncomeLiabilityAccount.getAccountID().longValue())//
+                .incomeFromCapitalizationAccountId(feeIncomeAccount.getAccountID().longValue())//
+                .capitalizedIncomeType(PostLoanProductsRequest.CapitalizedIncomeTypeEnum.FEE);
+    }
+
     // Loan product with proper accounting setup
     protected PostLoanProductsRequest createOnePeriod30DaysPeriodicAccrualProduct(double interestRatePerPeriod) {
         return new PostLoanProductsRequest().name(Utils.uniqueRandomStringGenerator("LOAN_PRODUCT_", 6))//
@@ -459,7 +758,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                         .repaymentEvery(true)//
                         .graceOnPrincipalAndInterestPayment(true)//
                         .graceOnArrearsAgeing(true))//
-                .allowPartialPeriodInterestCalcualtion(true)//
+                .allowPartialPeriodInterestCalculation(true)//
                 .maxTrancheCount(10)//
                 .outstandingLoanBalance(10000.0)//
                 .charges(Collections.emptyList())//
@@ -515,7 +814,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 .loanScheduleProcessingType(LoanScheduleProcessingType.HORIZONTAL.toString()) //
                 .addPaymentAllocationItem(defaultAllocation).enableDownPayment(false) //
                 .isInterestRecalculationEnabled(true).interestRecalculationCompoundingMethod(0) //
-                .preClosureInterestCalculationStrategy(1).recalculationRestFrequencyType(1).allowPartialPeriodInterestCalcualtion(true) //
+                .preClosureInterestCalculationStrategy(1).recalculationRestFrequencyType(1).allowPartialPeriodInterestCalculation(true) //
                 .rescheduleStrategyMethod(rescheduleStrategyMethod);
     }
 
@@ -577,7 +876,8 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 .repaymentEvery(1)//
                 .repaymentFrequencyType(RepaymentFrequencyType.MONTHS.longValue())//
                 .interestType(interestType)//
-                .amortizationType(amortizationType);
+                .amortizationType(amortizationType)//
+                .graceOnArrearsAgeing(0);
     }
 
     private RequestSpecification createRequestSpecification(String authKey) {
@@ -612,7 +912,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
             Assertions.assertEquals(transactions.length, loanDetails.getTransactions().size());
             Arrays.stream(transactions).forEach(tr -> {
                 Optional<GetLoansLoanIdTransactions> optTx = loanDetails.getTransactions().stream()
-                        .filter(item -> Objects.equals(item.getAmount(), tr.amount) //
+                        .filter(item -> Objects.equals(Utils.getDoubleValue(item.getAmount()), tr.amount) //
                                 && Objects.equals(item.getType().getValue(), tr.type) //
                                 && Objects.equals(item.getDate(), LocalDate.parse(tr.date, dateTimeFormatter)))
                         .findFirst();
@@ -628,42 +928,89 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         }
     }
 
-    protected void verifyTransactions(Long loanId, TransactionExt... transactions) {
-        GetLoansLoanIdResponse loanDetails = loanTransactionHelper.getLoan(requestSpec, responseSpec, loanId.intValue());
+    protected void verifyTransactions(final Long loanId, final TransactionExt... transactions) {
+        final GetLoansLoanIdResponse loanDetails = loanTransactionHelper.getLoan(requestSpec, responseSpec, loanId.intValue());
         if (transactions == null || transactions.length == 0) {
             assertNull(loanDetails.getTransactions(), "No transaction is expected on loan " + loanId);
         } else {
+            Assertions.assertNotNull(loanDetails.getTransactions());
             Assertions.assertEquals(transactions.length, loanDetails.getTransactions().size(), "Number of transactions on loan " + loanId);
+
             Arrays.stream(transactions).forEach(tr -> {
-                boolean found = loanDetails.getTransactions().stream().anyMatch(item -> Objects.equals(item.getAmount(), tr.amount) //
-                        && Objects.equals(item.getType().getValue(), tr.type) //
-                        && Objects.equals(item.getDate(), LocalDate.parse(tr.date, dateTimeFormatter)) //
-                        && Objects.equals(item.getOutstandingLoanBalance(), tr.outstandingPrincipal) //
-                        && Objects.equals(item.getPrincipalPortion(), tr.principalPortion) //
-                        && Objects.equals(item.getInterestPortion(), tr.interestPortion) //
-                        && Objects.equals(item.getFeeChargesPortion(), tr.feePortion) //
-                        && Objects.equals(item.getPenaltyChargesPortion(), tr.penaltyPortion) //
-                        && Objects.equals(item.getOverpaymentPortion(), tr.overpaymentPortion) //
-                        && Objects.equals(item.getUnrecognizedIncomePortion(), tr.unrecognizedPortion) //
-                );
-                Assertions.assertTrue(found, "Required transaction not found: " + tr + " on loan " + loanId);
+                final List<GetLoansLoanIdTransactions> transactionsByDate = loanDetails.getTransactions().stream()
+                        .filter(item -> Objects.equals(item.getDate(), LocalDate.parse(tr.date, dateTimeFormatter))).toList();
+
+                if (transactionsByDate.isEmpty()) {
+                    Assertions.fail("No transactions found for date " + tr.date + " on loan " + loanId);
+                    return;
+                }
+
+                final boolean found = transactionsByDate.stream()
+                        .anyMatch(item -> Objects.equals(Utils.getDoubleValue(item.getAmount()), tr.amount)
+                                && Objects.equals(item.getType().getValue(), tr.type)
+                                && Objects.equals(Utils.getDoubleValue(item.getOutstandingLoanBalance()), tr.outstandingPrincipal)
+                                && Objects.equals(Utils.getDoubleValue(item.getPrincipalPortion()), tr.principalPortion)
+                                && Objects.equals(Utils.getDoubleValue(item.getInterestPortion()), tr.interestPortion)
+                                && Objects.equals(Utils.getDoubleValue(item.getFeeChargesPortion()), tr.feePortion)
+                                && Objects.equals(Utils.getDoubleValue(item.getPenaltyChargesPortion()), tr.penaltyPortion)
+                                && Objects.equals(Utils.getDoubleValue(item.getOverpaymentPortion()), tr.overpaymentPortion)
+                                && Objects.equals(Utils.getDoubleValue(item.getUnrecognizedIncomePortion()), tr.unrecognizedPortion));
+
+                if (!found) {
+                    final StringBuilder errorMessage = new StringBuilder();
+                    errorMessage.append("Required transaction not found: ").append(tr).append(" on loan ").append(loanId);
+                    errorMessage.append("\nTransactions found for date ").append(tr.date).append(":");
+
+                    for (int i = 0; i < transactionsByDate.size(); i++) {
+                        GetLoansLoanIdTransactions item = transactionsByDate.get(i);
+                        errorMessage.append("\n  Transaction ").append(i + 1).append(": ");
+                        errorMessage.append("amount=").append(Utils.getDoubleValue(item.getAmount()));
+                        errorMessage.append(", type=").append(item.getType().getValue());
+                        errorMessage.append(", date=").append(item.getDate().format(dateTimeFormatter));
+                        errorMessage.append(", outstandingPrincipal=").append(Utils.getDoubleValue(item.getOutstandingLoanBalance()));
+                        errorMessage.append(", principalPortion=").append(Utils.getDoubleValue(item.getPrincipalPortion()));
+                        errorMessage.append(", interestPortion=").append(Utils.getDoubleValue(item.getInterestPortion()));
+                        errorMessage.append(", feePortion=").append(Utils.getDoubleValue(item.getFeeChargesPortion()));
+                        errorMessage.append(", penaltyPortion=").append(Utils.getDoubleValue(item.getPenaltyChargesPortion()));
+                        errorMessage.append(", unrecognizedPortion=").append(Utils.getDoubleValue(item.getUnrecognizedIncomePortion()));
+                        errorMessage.append(", overpaymentPortion=").append(Utils.getDoubleValue(item.getOverpaymentPortion()));
+                        errorMessage.append(", reversed=").append(item.getManuallyReversed() != null ? item.getManuallyReversed() : false);
+                    }
+
+                    Assertions.fail(errorMessage.toString());
+                }
             });
         }
     }
 
+    protected void verifyArrears(LoanPointInTimeData pointInTimeData, boolean isOverDue, String overdueSince) {
+        assertThat(Objects.requireNonNull(pointInTimeData.getArrears()).getOverdue()).isEqualTo(isOverDue);
+        if (isOverDue) {
+            assertThat(Objects.requireNonNull(pointInTimeData.getArrears().getOverDueSince()).toString()).isEqualTo(overdueSince);
+        } else {
+            assertThat(pointInTimeData.getArrears().getOverDueSince()).isNull();
+        }
+    }
+
     protected void placeHardLockOnLoan(Long loanId) {
-        loanAccountLockHelper.placeSoftLockOnLoanAccount(loanId.intValue(), "LOAN_COB_CHUNK_PROCESSING");
+        LoanAccountLockHelper.placeSoftLockOnLoanAccount(loanId, "LOAN_COB_CHUNK_PROCESSING");
     }
 
     protected void placeHardLockOnLoan(Long loanId, String error) {
-        loanAccountLockHelper.placeSoftLockOnLoanAccount(loanId.intValue(), "LOAN_COB_CHUNK_PROCESSING", error);
+        LoanAccountLockHelper.placeSoftLockOnLoanAccount(loanId, "LOAN_COB_CHUNK_PROCESSING", error);
     }
 
     protected void executeInlineCOB(Long loanId) {
         inlineLoanCOBHelper.executeInlineCOB(List.of(loanId));
     }
 
-    protected void reAgeLoan(Long loanId, String frequencyType, int frequencyNumber, String startDate, Integer numberOfInstallments) {
+    protected void reAgeLoan(Long loanId, String frequencyType, int frequencyNumber, String startDate, Integer numberOfInstallments,
+            String reAgeInterestHandling) {
+        reAgeLoan(loanId, frequencyType, frequencyNumber, startDate, numberOfInstallments, reAgeInterestHandling, null);
+    }
+
+    protected void reAgeLoan(Long loanId, String frequencyType, int frequencyNumber, String startDate, Integer numberOfInstallments,
+            String reAgeInterestHandling, Double transactionAmount) {
         PostLoansLoanIdTransactionsRequest request = new PostLoansLoanIdTransactionsRequest();
         request.setDateFormat(DATETIME_PATTERN);
         request.setLocale("en");
@@ -671,11 +1018,16 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         request.setFrequencyNumber(frequencyNumber);
         request.setStartDate(startDate);
         request.setNumberOfInstallments(numberOfInstallments);
+        request.setReAgeInterestHandling(reAgeInterestHandling);
+        if (transactionAmount != null) {
+            request.transactionAmount(transactionAmount);
+        }
         loanTransactionHelper.reAge(loanId, request);
     }
 
-    protected void reAmortizeLoan(Long loanId) {
+    protected void reAmortizeLoan(Long loanId, String reAmortizationInterestHandling) {
         PostLoansLoanIdTransactionsRequest request = new PostLoansLoanIdTransactionsRequest();
+        request.setReAmortizationInterestHandling(reAmortizationInterestHandling);
         request.setDateFormat(DATETIME_PATTERN);
         request.setLocale("en");
         loanTransactionHelper.reAmortize(loanId, request);
@@ -717,6 +1069,21 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         RetrieveLoansPointInTimeRequest request = new RetrieveLoansPointInTimeRequest().loanIds(loanIds).date(date)
                 .dateFormat(DATETIME_PATTERN).locale("en");
         return Calls.ok(fineractClient().loansPointInTimeApi.retrieveLoansPointInTime(request));
+    }
+
+    protected PutLoansApprovedAmountResponse modifyLoanApprovedAmount(Long loanId, BigDecimal approvedAmount) {
+        PutLoansApprovedAmountRequest request = new PutLoansApprovedAmountRequest().amount(approvedAmount).locale("en");
+        return Calls.ok(fineractClient().loans.updateApprovedAmountLoan(loanId, request));
+    }
+
+    protected List<LoanApprovedAmountHistoryData> getLoanApprovedAmountHistory(Long loanId) {
+        return Calls.ok(fineractClient().loans.retrieveApprovedAmountHistoryLoan(loanId));
+    }
+
+    protected PutLoansAvailableDisbursementAmountResponse modifyLoanAvailableDisbursementAmount(Long loanId, BigDecimal approvedAmount) {
+        PutLoansAvailableDisbursementAmountRequest request = new PutLoansAvailableDisbursementAmountRequest().amount(approvedAmount)
+                .locale("en");
+        return Calls.ok(fineractClient().loans.updateAvailableDisbursementAmountLoan(loanId, request));
     }
 
     protected void verifyOutstanding(LoanPointInTimeData loan, OutstandingAmounts outstanding) {
@@ -796,6 +1163,14 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         return chargeId.longValue();
     }
 
+    protected Long createOverduePenaltyPercentageCharge(double percentageAmount, Integer feeFrequency, int feeInterval) {
+        Integer chargeId = ChargesHelper.createCharges(requestSpec, responseSpec,
+                ChargesHelper.getLoanOverdueFeeJSONWithCalculationTypePercentageWithFeeInterval(String.valueOf(percentageAmount),
+                        feeFrequency, feeInterval));
+        assertNotNull(chargeId);
+        return chargeId.longValue();
+    }
+
     protected void verifyRepaymentSchedule(GetLoansLoanIdResponse savedLoanResponse, GetLoansLoanIdResponse actualLoanResponse,
             int totalPeriods, int identicalPeriods) {
         List<GetLoansLoanIdRepaymentPeriod> savedPeriods = savedLoanResponse.getRepaymentSchedule().getPeriods();
@@ -812,8 +1187,8 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
     private void verifyPeriodsEquality(List<GetLoansLoanIdRepaymentPeriod> savedPeriods, List<GetLoansLoanIdRepaymentPeriod> actualPeriods,
             int startIndex, int endIndex, boolean shouldEqual) {
         for (int i = startIndex; i < endIndex; i++) {
-            Double savedTotalDue = savedPeriods.get(i).getTotalDueForPeriod();
-            Double actualTotalDue = actualPeriods.get(i).getTotalDueForPeriod();
+            Double savedTotalDue = Utils.getDoubleValue(savedPeriods.get(i).getTotalDueForPeriod());
+            Double actualTotalDue = Utils.getDoubleValue(actualPeriods.get(i).getTotalDueForPeriod());
 
             if (shouldEqual) {
                 assertEquals(savedTotalDue, actualTotalDue, String.format(
@@ -837,19 +1212,19 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         int installmentNumber = 0;
         for (int i = 0; i < installments.length; i++) {
             GetLoansLoanIdRepaymentPeriod period = loanResponse.getRepaymentSchedule().getPeriods().get(i);
-            Double principalDue = period.getPrincipalDue();
+            Double principalDue = Utils.getDoubleValue(period.getPrincipalDue());
             Double amount = installments[i].principalAmount;
 
             if (installments[i].completed == null) { // this is for the disbursement
-                Assertions.assertEquals(amount, period.getPrincipalLoanBalanceOutstanding(),
+                Assertions.assertEquals(amount, Utils.getDoubleValue(period.getPrincipalLoanBalanceOutstanding()),
                         "%d. installment's principal due is different, expected: %.2f, actual: %.2f".formatted(i, amount,
-                                period.getPrincipalLoanBalanceOutstanding()));
+                                Utils.getDoubleValue(period.getPrincipalLoanBalanceOutstanding())));
             } else {
                 Assertions.assertEquals(amount, principalDue,
                         "%d. installment's principal due is different, expected: %.2f, actual: %.2f".formatted(i, amount, principalDue));
 
                 Double interestAmount = installments[i].interestAmount;
-                Double interestDue = period.getInterestDue();
+                Double interestDue = Utils.getDoubleValue(period.getInterestDue());
                 if (interestAmount != null) {
                     Assertions.assertEquals(interestAmount, interestDue,
                             "%d. installment's interest due is different, expected: %.2f, actual: %.2f".formatted(i, interestAmount,
@@ -857,14 +1232,14 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 }
 
                 Double feeAmount = installments[i].feeAmount;
-                Double feeDue = period.getFeeChargesDue();
+                Double feeDue = Utils.getDoubleValue(period.getFeeChargesDue());
                 if (feeAmount != null) {
                     Assertions.assertEquals(feeAmount, feeDue,
                             "%d. installment's fee charges due is different, expected: %.2f, actual: %.2f".formatted(i, feeAmount, feeDue));
                 }
 
                 Double penaltyAmount = installments[i].penaltyAmount;
-                Double penaltyDue = period.getPenaltyChargesDue();
+                Double penaltyDue = Utils.getDoubleValue(period.getPenaltyChargesDue());
                 if (penaltyAmount != null) {
                     Assertions.assertEquals(penaltyAmount, penaltyDue,
                             "%d. installment's penalty charges due is different, expected: %.2f, actual: %.2f".formatted(i, penaltyAmount,
@@ -872,7 +1247,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 }
 
                 Double outstandingAmount = installments[i].totalOutstandingAmount;
-                Double totalOutstanding = period.getTotalOutstandingForPeriod();
+                Double totalOutstanding = Utils.getDoubleValue(period.getTotalOutstandingForPeriod());
                 if (outstandingAmount != null) {
                     Assertions.assertEquals(outstandingAmount, totalOutstanding,
                             "%d. installment's total outstanding is different, expected: %.2f, actual: %.2f".formatted(i, outstandingAmount,
@@ -882,7 +1257,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 Double outstandingPrincipalExpected = installments[i].outstandingAmounts != null
                         ? installments[i].outstandingAmounts.principalOutstanding
                         : null;
-                Double outstandingPrincipal = period.getPrincipalOutstanding();
+                Double outstandingPrincipal = Utils.getDoubleValue(period.getPrincipalOutstanding());
                 if (outstandingPrincipalExpected != null) {
                     Assertions.assertEquals(outstandingPrincipalExpected, outstandingPrincipal,
                             "%d. installment's outstanding principal is different, expected: %.2f, actual: %.2f".formatted(i,
@@ -892,7 +1267,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 Double outstandingFeeExpected = installments[i].outstandingAmounts != null
                         ? installments[i].outstandingAmounts.feeOutstanding
                         : null;
-                Double outstandingFee = period.getFeeChargesOutstanding();
+                Double outstandingFee = Utils.getDoubleValue(period.getFeeChargesOutstanding());
                 if (outstandingFeeExpected != null) {
                     Assertions.assertEquals(outstandingFeeExpected, outstandingFee,
                             "%d. installment's outstanding fee is different, expected: %.2f, actual: %.2f".formatted(i,
@@ -902,7 +1277,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 Double outstandingPenaltyExpected = installments[i].outstandingAmounts != null
                         ? installments[i].outstandingAmounts.penaltyOutstanding
                         : null;
-                Double outstandingPenalty = period.getPenaltyChargesOutstanding();
+                Double outstandingPenalty = Utils.getDoubleValue(period.getPenaltyChargesOutstanding());
                 if (outstandingPenaltyExpected != null) {
                     Assertions.assertEquals(outstandingPenaltyExpected, outstandingPenalty,
                             "%d. installment's outstanding penalty is different, expected: %.2f, actual: %.2f".formatted(i,
@@ -912,7 +1287,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 Double outstandingTotalExpected = installments[i].outstandingAmounts != null
                         ? installments[i].outstandingAmounts.totalOutstanding
                         : null;
-                Double outstandingTotal = period.getTotalOutstandingForPeriod();
+                Double outstandingTotal = Utils.getDoubleValue(period.getTotalOutstandingForPeriod());
                 if (outstandingTotalExpected != null) {
                     Assertions.assertEquals(outstandingTotalExpected, outstandingTotal,
                             "%d. installment's total outstanding is different, expected: %.2f, actual: %.2f".formatted(i,
@@ -920,7 +1295,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
                 }
 
                 Double loanBalanceExpected = installments[i].loanBalance;
-                Double loanBalance = period.getPrincipalLoanBalanceOutstanding();
+                Double loanBalance = Utils.getDoubleValue(period.getPrincipalLoanBalanceOutstanding());
                 if (loanBalanceExpected != null) {
                     Assertions.assertEquals(loanBalanceExpected, loanBalance,
                             "%d. installment's loan balance is different, expected: %.2f, actual: %.2f".formatted(i, loanBalanceExpected,
@@ -934,16 +1309,15 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         }
     }
 
-    protected void runAt(String date, Runnable runnable) {
-        try {
-            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
-                    new PutGlobalConfigurationsRequest().enabled(true));
-            businessDateHelper.updateBusinessDate(
-                    new BusinessDateRequest().type(BUSINESS_DATE.getName()).date(date).dateFormat(DATETIME_PATTERN).locale("en"));
-            runnable.run();
-        } finally {
-            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
-                    new PutGlobalConfigurationsRequest().enabled(false));
+    protected void runFromToInclusive(String fromDate, String toDate, Runnable runnable) {
+        DateTimeFormatter format = DateTimeFormatter.ofPattern(DATETIME_PATTERN);
+        LocalDate startDate = LocalDate.parse(fromDate, format);
+        LocalDate endDate = LocalDate.parse(toDate, format);
+
+        LocalDate currentDate = startDate;
+        while (currentDate.isBefore(endDate) || currentDate.isEqual(endDate)) {
+            runAt(format.format(currentDate), runnable);
+            currentDate = currentDate.plusDays(1);
         }
     }
 
@@ -965,13 +1339,43 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
     protected PostLoansRequest applyLoanRequest(Long clientId, Long loanProductId, String loanDisbursementDate, Double amount,
             int numberOfRepayments, Consumer<PostLoansRequest> customizer) {
 
-        PostLoansRequest postLoansRequest = new PostLoansRequest().clientId(clientId).productId(loanProductId)
-                .expectedDisbursementDate(loanDisbursementDate).dateFormat(DATETIME_PATTERN)
-                .transactionProcessingStrategyCode(DUE_PENALTY_INTEREST_PRINCIPAL_FEE_IN_ADVANCE_PENALTY_INTEREST_PRINCIPAL_FEE_STRATEGY)
-                .locale("en").submittedOnDate(loanDisbursementDate).amortizationType(1).interestRatePerPeriod(BigDecimal.ZERO)
-                .interestCalculationPeriodType(1).interestType(0).repaymentEvery(30).repaymentFrequencyType(0)
-                .numberOfRepayments(numberOfRepayments).loanTermFrequency(numberOfRepayments * 30).loanTermFrequencyType(0)
-                .maxOutstandingLoanBalance(BigDecimal.valueOf(amount)).principal(BigDecimal.valueOf(amount)).loanType("individual");
+        PostLoansRequest postLoansRequest = new PostLoansRequest().clientId(clientId) //
+                .productId(loanProductId) //
+                .expectedDisbursementDate(loanDisbursementDate) //
+                .dateFormat(DATETIME_PATTERN) //
+                .transactionProcessingStrategyCode(DUE_PENALTY_INTEREST_PRINCIPAL_FEE_IN_ADVANCE_PENALTY_INTEREST_PRINCIPAL_FEE_STRATEGY) //
+                .locale("en") //
+                .submittedOnDate(loanDisbursementDate) //
+                .amortizationType(1) //
+                .interestRatePerPeriod(BigDecimal.ZERO) //
+                .interestCalculationPeriodType(1) //
+                .interestType(0) //
+                .repaymentEvery(30) //
+                .repaymentFrequencyType(0) //
+                .numberOfRepayments(numberOfRepayments) //
+                .loanTermFrequency(numberOfRepayments * 30) //
+                .loanTermFrequencyType(0) //
+                .maxOutstandingLoanBalance(BigDecimal.valueOf(amount)) //
+                .principal(BigDecimal.valueOf(amount)) //
+                .loanType("individual") //
+                .graceOnArrearsAgeing(0);
+        if (customizer != null) {
+            customizer.accept(postLoansRequest);
+        }
+        return postLoansRequest;
+    }
+
+    protected PostLoansRequest applyCumulativeLoanRequest(Long clientId, Long loanProductId, String loanDisbursementDate, Double amount,
+            Double interestRate, int numberOfRepayments, Consumer<PostLoansRequest> customizer) {
+
+        PostLoansRequest postLoansRequest = new PostLoansRequest().clientId(clientId)
+                .transactionProcessingStrategyCode(DUE_PENALTY_FEE_INTEREST_PRINCIPAL_IN_ADVANCE_PRINCIPAL_PENALTY_FEE_INTEREST_STRATEGY)
+                .productId(loanProductId).expectedDisbursementDate(loanDisbursementDate).dateFormat(DATETIME_PATTERN).locale("en")
+                .submittedOnDate(loanDisbursementDate).amortizationType(1).interestRatePerPeriod(BigDecimal.valueOf(interestRate))
+                .numberOfRepayments(numberOfRepayments).principal(BigDecimal.valueOf(amount)).loanTermFrequency(numberOfRepayments)
+                .repaymentEvery(1).repaymentFrequencyType(RepaymentFrequencyType.MONTHS)
+                .loanTermFrequencyType(RepaymentFrequencyType.MONTHS).interestType(InterestType.DECLINING_BALANCE)
+                .interestCalculationPeriodType(InterestCalculationPeriodType.DAILY).loanType("individual");
         if (customizer != null) {
             customizer.accept(postLoansRequest);
         }
@@ -1014,6 +1418,17 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
             int numberOfRepayments, Consumer<PostLoansRequest> customizer) {
         PostLoansResponse postLoansResponse = loanTransactionHelper
                 .applyLoan(applyLoanRequest(clientId, loanProductId, loanDisbursementDate, amount, numberOfRepayments, customizer));
+
+        PostLoansLoanIdResponse approvedLoanResult = loanTransactionHelper.approveLoan(postLoansResponse.getResourceId(),
+                approveLoanRequest(amount, loanDisbursementDate));
+
+        return approvedLoanResult.getLoanId();
+    }
+
+    protected Long applyAndApproveCumulativeLoan(Long clientId, Long loanProductId, String loanDisbursementDate, Double amount,
+            Double interestRate, int numberOfRepayments, Consumer<PostLoansRequest> customizer) {
+        PostLoansResponse postLoansResponse = loanTransactionHelper.applyLoan(applyCumulativeLoanRequest(clientId, loanProductId,
+                loanDisbursementDate, amount, interestRate, numberOfRepayments, customizer));
 
         PostLoansLoanIdResponse approvedLoanResult = loanTransactionHelper.approveLoan(postLoansResponse.getResourceId(),
                 approveLoanRequest(amount, loanDisbursementDate));
@@ -1092,14 +1507,25 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
         return loanTransactionHelper.addChargeForLoan(loanId.intValue(), payload, responseSpec);
     }
 
+    protected List<GetLoansLoanIdChargesChargeIdResponse> getOverdueInstallmentLoanCharges(Long loanId) {
+        return ok(fineractClient().loanCharges.retrieveAllLoanCharges(loanId)).stream() //
+                .filter(ch -> ch.getChargeTimeType().getId().intValue() == ChargesHelper.CHARGE_OVERDUE_INSTALLMENT_FEE) //
+                .toList(); //
+    }
+
+    protected void deactivateOverdueLoanCharges(Long loanId, String fromDueDate) {
+        ok(fineractClient().loanCharges.createOrPayLoanCharge(loanId,
+                new PostLoansLoanIdChargesRequest().dueDate(fromDueDate).dateFormat(DATETIME_PATTERN).locale("en"), "deactivateOverdue"));
+    }
+
     protected void waiveLoanCharge(Long loanId, Long chargeId, Integer installmentNumber) {
         String payload = LoanTransactionHelper.getWaiveChargeJSON(installmentNumber.toString());
         loanTransactionHelper.waiveChargesForLoan(loanId.intValue(), chargeId.intValue(), payload);
     }
 
     protected void updateBusinessDate(String date) {
-        businessDateHelper.updateBusinessDate(
-                new BusinessDateRequest().type(BUSINESS_DATE.getName()).date(date).dateFormat(DATETIME_PATTERN).locale("en"));
+        businessDateHelper.updateBusinessDate(new BusinessDateUpdateRequest().type(BusinessDateUpdateRequest.TypeEnum.BUSINESS_DATE)
+                .date(date).dateFormat(DATETIME_PATTERN).locale("en"));
     }
 
     protected Long getTransactionId(Long loanId, String type, String date) {
@@ -1192,11 +1618,11 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
 
     protected void validateLoanSummaryBalances(GetLoansLoanIdResponse loanDetails, Double totalOutstanding, Double totalRepayment,
             Double principalOutstanding, Double principalPaid, Double totalOverpaid) {
-        assertEquals(totalOutstanding, loanDetails.getSummary().getTotalOutstanding());
-        assertEquals(totalRepayment, loanDetails.getSummary().getTotalRepayment());
-        assertEquals(principalOutstanding, loanDetails.getSummary().getPrincipalOutstanding());
-        assertEquals(principalPaid, loanDetails.getSummary().getPrincipalPaid());
-        assertEquals(totalOverpaid, loanDetails.getTotalOverpaid());
+        assertEquals(totalOutstanding, Utils.getDoubleValue(loanDetails.getSummary().getTotalOutstanding()));
+        assertEquals(totalRepayment, Utils.getDoubleValue(loanDetails.getSummary().getTotalRepayment()));
+        assertEquals(principalOutstanding, Utils.getDoubleValue(loanDetails.getSummary().getPrincipalOutstanding()));
+        assertEquals(principalPaid, Utils.getDoubleValue(loanDetails.getSummary().getPrincipalPaid()));
+        assertEquals(totalOverpaid, Utils.getDoubleValue(loanDetails.getTotalOverpaid()));
     }
 
     protected void checkMaturityDates(long loanId, LocalDate expectedMaturityDate, LocalDate actualMaturityDate) {
@@ -1223,6 +1649,47 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
     protected void rejectLoan(Long loanId, String rejectedOnDate) {
         loanTransactionHelper.rejectLoan(loanId,
                 new PostLoansLoanIdRequest().rejectedOnDate(rejectedOnDate).locale("en").dateFormat(DATETIME_PATTERN));
+    }
+
+    protected void verifyBusinessEvents(BusinessEvent... businessEvents) {
+        List<ExternalEventResponse> allExternalEvents = ExternalEventHelper.getAllExternalEvents(requestSpec, responseSpec);
+        logBusinessEvents(allExternalEvents);
+        Assertions.assertNotNull(businessEvents);
+        Assertions.assertNotNull(allExternalEvents);
+        Assertions.assertTrue(businessEvents.length <= allExternalEvents.size(),
+                "Expected business event count is less than actual. Expected: " + businessEvents.length + " Actual: "
+                        + allExternalEvents.size());
+        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern(DATETIME_PATTERN, Locale.ENGLISH);
+        for (BusinessEvent businessEvent : businessEvents) {
+            long count = allExternalEvents.stream().filter(externalEvent -> businessEvent.verify(externalEvent, formatter)).count();
+            Assertions.assertEquals(1, count, "Expected business event not found " + businessEvent);
+        }
+    }
+
+    protected void logBusinessEvents(List<ExternalEventResponse> allExternalEvents) {
+        allExternalEvents.forEach(externalEventDTO -> {
+            log.info("Event Received\n type:'{}'\n businessDate:'{}'", externalEventDTO.getType(), externalEventDTO.getBusinessDate());
+            if ("org.apache.fineract.avro.loan.v1.LoanTransactionDataV1".equals(externalEventDTO.getSchema())) {
+                Object amount = externalEventDTO.getPayLoad().get("amount");
+                Object outstandingLoanBalance = externalEventDTO.getPayLoad().get("outstandingLoanBalance");
+                Object principalPortion = externalEventDTO.getPayLoad().get("principalPortion");
+                Object interestPortion = externalEventDTO.getPayLoad().get("interestPortion");
+                Object feePortion = externalEventDTO.getPayLoad().get("feeChargesPortion");
+                Object penaltyPortion = externalEventDTO.getPayLoad().get("penaltyChargesPortion");
+                Object reversed = externalEventDTO.getPayLoad().get("reversed");
+                log.info(
+                        "Values\n amount: {}\n outstandingLoanBalance: {}\n principalPortion: {}\n interestPortion: {}\n feePortion: {}\n penaltyPortion: {}\n reversed: {}",
+                        amount, outstandingLoanBalance, principalPortion, interestPortion, feePortion, penaltyPortion, reversed);
+            } else {
+                log.info("Schema: {}", externalEventDTO.getSchema());
+            }
+        });
+    }
+
+    protected void deleteAllExternalEvents() {
+        ExternalEventHelper.deleteAllExternalEvents(requestSpec, createResponseSpecification(Matchers.is(204)));
+        List<ExternalEventResponse> allExternalEvents = ExternalEventHelper.getAllExternalEvents(requestSpec, responseSpec);
+        Assertions.assertEquals(0, allExternalEvents.size());
     }
 
     @RequiredArgsConstructor
@@ -1403,6 +1870,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
 
     public static class RescheduleStrategyMethod {
 
+        public static final Integer RESCHEDULE_NEXT_REPAYMENTS = 1;
         public static final Integer REDUCE_EMI_AMOUNT = 3;
         public static final Integer ADJUST_LAST_UNPAID_PERIOD = 4;
     }
@@ -1427,6 +1895,7 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
 
         public static final String LAST_INSTALLMENT = "LAST_INSTALLMENT";
         public static final String NEXT_INSTALLMENT = "NEXT_INSTALLMENT";
+        public static final String NEXT_LAST_INSTALLMENT = "NEXT_LAST_INSTALLMENT";
 
     }
 
@@ -1464,6 +1933,12 @@ public abstract class BaseLoanIntegrationTest extends IntegrationTest {
 
         advancedPaymentData.setPaymentAllocationOrder(paymentAllocationOrders);
         return advancedPaymentData;
+    }
+
+    protected static class DaysInYearCustomStrategy {
+
+        public static String FEB_29_PERIOD_ONLY = "FEB_29_PERIOD_ONLY";
+        public static String FULL_LEAP_YEAR = "FULL_LEAP_YEAR";
     }
 
 }

@@ -38,6 +38,15 @@ import org.apache.fineract.organisation.monetary.domain.Money;
 public class LoanSummary {
 
     // derived totals fields
+    @Column(name = "total_principal_derived", scale = 6, precision = 19)
+    private BigDecimal totalPrincipal;
+
+    @Column(name = "capitalized_income_derived", scale = 6, precision = 19)
+    private BigDecimal totalCapitalizedIncome;
+
+    @Column(name = "capitalized_income_adjustment_derived", scale = 6, precision = 19)
+    private BigDecimal totalCapitalizedIncomeAdjustment;
+
     @Column(name = "principal_disbursed_derived", scale = 6, precision = 19)
     private BigDecimal totalPrincipalDisbursed;
 
@@ -166,6 +175,9 @@ public class LoanSummary {
         this.totalPenaltyChargesWaived = BigDecimal.ZERO;
         this.totalPenaltyChargesWrittenOff = BigDecimal.ZERO;
         this.totalPrincipalAdjustments = BigDecimal.ZERO;
+        this.totalPrincipal = BigDecimal.ZERO;
+        this.totalCapitalizedIncome = BigDecimal.ZERO;
+        this.totalCapitalizedIncomeAdjustment = BigDecimal.ZERO;
         this.totalPrincipalDisbursed = BigDecimal.ZERO;
         this.totalPrincipalOutstanding = BigDecimal.ZERO;
         this.totalPrincipalRepaid = BigDecimal.ZERO;
@@ -176,17 +188,20 @@ public class LoanSummary {
     }
 
     public void updateSummary(final MonetaryCurrency currency, final Money principal,
-            final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments, Set<LoanCharge> charges) {
-
+            final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments, Set<LoanCharge> charges, Money capitalizedIncome,
+            Money capitalizedIncomeAdjustment) {
         this.totalPrincipalDisbursed = principal.getAmount();
+        this.totalCapitalizedIncome = capitalizedIncome.getAmount();
+        this.totalCapitalizedIncomeAdjustment = capitalizedIncomeAdjustment.getAmount();
+        this.totalPrincipal = principal.plus(capitalizedIncome).getAmount();
         this.totalPrincipalAdjustments = calculateTotalPrincipalAdjusted(repaymentScheduleInstallments, currency).getAmount();
         this.totalFeeAdjustments = calculateTotalFeeAdjusted(repaymentScheduleInstallments, currency).getAmount();
         this.totalPenaltyAdjustments = calculateTotalPenaltyAdjusted(repaymentScheduleInstallments, currency).getAmount();
         this.totalPrincipalRepaid = calculateTotalPrincipalRepaid(repaymentScheduleInstallments, currency).getAmount();
         this.totalPrincipalWrittenOff = calculateTotalPrincipalWrittenOff(repaymentScheduleInstallments, currency).getAmount();
 
-        this.totalPrincipalOutstanding = principal.plus(this.totalPrincipalAdjustments).minus(this.totalPrincipalRepaid)
-                .minus(this.totalPrincipalWrittenOff).getAmount();
+        this.totalPrincipalOutstanding = principal.plus(capitalizedIncome).plus(this.totalPrincipalAdjustments)
+                .minus(this.totalPrincipalRepaid).minus(this.totalPrincipalWrittenOff).getAmount();
 
         final Money totalInterestCharged = calculateTotalInterestCharged(repaymentScheduleInstallments, currency);
         this.totalInterestCharged = totalInterestCharged.getAmount();
@@ -225,7 +240,7 @@ public class LoanSummary {
         this.totalPenaltyChargesOutstanding = totalPenaltyChargesCharged.minus(this.totalPenaltyChargesRepaid)
                 .minus(this.totalPenaltyChargesWaived).minus(this.totalPenaltyChargesWrittenOff).getAmount();
 
-        final Money totalExpectedRepayment = Money.of(currency, this.totalPrincipalDisbursed).plus(this.totalInterestCharged)
+        final Money totalExpectedRepayment = Money.of(currency, this.totalPrincipal).plus(this.totalInterestCharged)
                 .plus(this.totalFeeChargesCharged).plus(this.totalPenaltyChargesCharged);
         this.totalExpectedRepayment = totalExpectedRepayment.getAmount();
 
@@ -270,6 +285,10 @@ public class LoanSummary {
         this.totalFeeChargesOutstanding = totalFeeChargesOutstanding;
     }
 
+    public void updateFeeChargesCharged(final BigDecimal totalFeeChargesCharged) {
+        this.totalFeeChargesCharged = totalFeeChargesCharged;
+    }
+
     public void updatePenaltyChargeOutstanding(final BigDecimal totalPenaltyChargesOutstanding) {
         this.totalPenaltyChargesOutstanding = totalPenaltyChargesOutstanding;
     }
@@ -292,6 +311,29 @@ public class LoanSummary {
 
     public void updateTotalWaived(final BigDecimal totalWaived) {
         this.totalWaived = totalWaived;
+    }
+
+    public void updateTotalExpectedRepayment(final BigDecimal totalExpectedRepayment) {
+        this.totalExpectedRepayment = totalExpectedRepayment;
+    }
+
+    public void updateTotalExpectedCostOfLoan(final BigDecimal totalExpectedCostOfLoan) {
+        this.totalExpectedCostOfLoan = totalExpectedCostOfLoan;
+    }
+
+    public void recalculateDerivedTotalsForAdjustedFeeCharged(final BigDecimal adjustedFeeCharged) {
+        this.totalFeeChargesCharged = adjustedFeeCharged;
+
+        this.totalFeeChargesOutstanding = adjustedFeeCharged.subtract(this.totalFeeChargesRepaid).subtract(this.totalFeeChargesWaived)
+                .subtract(this.totalFeeChargesWrittenOff);
+
+        this.totalOutstanding = this.totalPrincipalOutstanding.add(this.totalInterestOutstanding).add(this.totalFeeChargesOutstanding)
+                .add(this.totalPenaltyChargesOutstanding);
+
+        this.totalExpectedRepayment = this.totalPrincipal.add(this.totalInterestCharged).add(adjustedFeeCharged)
+                .add(this.totalPenaltyChargesCharged);
+
+        this.totalExpectedCostOfLoan = this.totalInterestCharged.add(adjustedFeeCharged).add(this.totalPenaltyChargesCharged);
     }
 
     protected Money calculateTotalPrincipalRepaid(final List<LoanRepaymentScheduleInstallment> repaymentScheduleInstallments,
