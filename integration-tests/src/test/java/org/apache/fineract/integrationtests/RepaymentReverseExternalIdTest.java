@@ -33,12 +33,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.fineract.client.models.AllowAttributeOverrides;
-import org.apache.fineract.client.models.ChargeData;
-import org.apache.fineract.client.models.ChargeToGLAccountMapper;
-import org.apache.fineract.client.models.GetLoanFeeToIncomeAccountMappings;
 import org.apache.fineract.client.models.GetLoanPaymentChannelToFundSourceMappings;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactions;
+import org.apache.fineract.client.models.LoanProductChargeData;
+import org.apache.fineract.client.models.LoanProductChargeToGLAccountMapper;
 import org.apache.fineract.client.models.PostLoanProductsRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsRequest;
@@ -92,7 +91,7 @@ public class RepaymentReverseExternalIdTest extends BaseLoanIntegrationTest {
             final LocalDate todaysDate = Utils.getLocalDateOfTenant();
             globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                     new PutGlobalConfigurationsRequest().enabled(true));
-            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, todaysDate);
+            BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, todaysDate);
 
             // Create a client and a loan with externalId
             final Integer clientId = clientHelper.createClient(ClientHelper.defaultClientCreationRequest()).getClientId().intValue();
@@ -140,9 +139,9 @@ public class RepaymentReverseExternalIdTest extends BaseLoanIntegrationTest {
         List<Integer> principalVariationsForBorrowerCycle = new ArrayList<>();
         List<Integer> numberOfRepaymentVariationsForBorrowerCycle = new ArrayList<>();
         List<Integer> interestRateVariationsForBorrowerCycle = new ArrayList<>();
-        List<ChargeData> charges = new ArrayList<>();
-        List<ChargeToGLAccountMapper> penaltyToIncomeAccountMappings = new ArrayList<>();
-        List<GetLoanFeeToIncomeAccountMappings> feeToIncomeAccountMappings = new ArrayList<>();
+        List<LoanProductChargeData> charges = new ArrayList<>();
+        List<LoanProductChargeToGLAccountMapper> penaltyToIncomeAccountMappings = new ArrayList<>();
+        List<LoanProductChargeToGLAccountMapper> feeToIncomeAccountMappings = new ArrayList<>();
 
         List<GetLoanPaymentChannelToFundSourceMappings> paymentChannelToFundSourceMappings = new ArrayList<>();
         GetLoanPaymentChannelToFundSourceMappings loanPaymentChannelToFundSourceMappings = new GetLoanPaymentChannelToFundSourceMappings();
@@ -153,7 +152,7 @@ public class RepaymentReverseExternalIdTest extends BaseLoanIntegrationTest {
         final Integer fundId = createFund(requestSpec, responseSpec);
         Assertions.assertNotNull(fundId);
 
-        final Integer delinquencyBucketId = DelinquencyBucketsHelper.createDelinquencyBucket(requestSpec, responseSpec);
+        final Long delinquencyBucketId = DelinquencyBucketsHelper.createDefaultBucket();
         Assertions.assertNotNull(delinquencyBucketId);
 
         return new PostLoanProductsRequest()//
@@ -252,7 +251,7 @@ public class RepaymentReverseExternalIdTest extends BaseLoanIntegrationTest {
                 .interestRecalculationCompoundingMethod(0)//
                 .recalculationRestFrequencyType(2)//
                 .recalculationRestFrequencyInterval(1)//
-                .allowPartialPeriodInterestCalcualtion(false);//
+                .allowPartialPeriodInterestCalculation(false);//
     }
 
     private Integer createLoanAccount(final Integer clientID, final Long loanProductID, final String externalId) {

@@ -23,7 +23,7 @@ import java.time.LocalDate;
 import java.util.Set;
 import lombok.Getter;
 import org.apache.fineract.organisation.monetary.domain.Money;
-import org.apache.fineract.portfolio.loanaccount.domain.LoanInterestRecalcualtionAdditionalDetails;
+import org.apache.fineract.portfolio.loanaccount.loanschedule.data.InterestRecalculationAdditionalDetailData;
 import org.apache.fineract.portfolio.loanaccount.loanschedule.data.LoanSchedulePeriodData;
 
 /**
@@ -36,7 +36,7 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     private final Integer periodNumber;
     private final LocalDate disbursementDate;
     private final Money principalDisbursed;
-    private final BigDecimal chargesDueAtTimeOfDisbursement;
+    private BigDecimal chargesDueAtTimeOfDisbursement;
     private boolean isEMIFixedSpecificToInstallment = false;
 
     public static LoanScheduleModelDisbursementPeriod disbursement(final LocalDate disbursementDate, final Money principalDisbursed,
@@ -105,7 +105,7 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
 
     @Override
     public void addLoanCharges(@SuppressWarnings("unused") BigDecimal feeCharge, @SuppressWarnings("unused") BigDecimal penaltyCharge) {
-        return;
+        this.chargesDueAtTimeOfDisbursement = this.chargesDueAtTimeOfDisbursement.add(feeCharge);
     }
 
     @Override
@@ -124,7 +124,7 @@ public final class LoanScheduleModelDisbursementPeriod implements LoanScheduleMo
     }
 
     @Override
-    public Set<LoanInterestRecalcualtionAdditionalDetails> getLoanCompoundingDetails() {
+    public Set<InterestRecalculationAdditionalDetailData> getLoanCompoundingDetails() {
         return null;
     }
 

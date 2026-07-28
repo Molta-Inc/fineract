@@ -39,22 +39,20 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.fineract.client.models.AdvancedPaymentData;
 import org.apache.fineract.client.models.AllowAttributeOverrides;
-import org.apache.fineract.client.models.ChargeData;
-import org.apache.fineract.client.models.ChargeToGLAccountMapper;
 import org.apache.fineract.client.models.GetJournalEntriesTransactionIdResponse;
-import org.apache.fineract.client.models.GetLoanFeeToIncomeAccountMappings;
 import org.apache.fineract.client.models.GetLoanPaymentChannelToFundSourceMappings;
 import org.apache.fineract.client.models.GetLoanTransactionRelation;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdTransactionsTransactionIdResponse;
 import org.apache.fineract.client.models.JournalEntryTransactionItem;
+import org.apache.fineract.client.models.LoanProductChargeData;
+import org.apache.fineract.client.models.LoanProductChargeToGLAccountMapper;
+import org.apache.fineract.client.models.PaymentTypeCreateRequest;
 import org.apache.fineract.client.models.PostClientsResponse;
 import org.apache.fineract.client.models.PostLoanProductsRequest;
 import org.apache.fineract.client.models.PostLoanProductsResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsRequest;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsResponse;
-import org.apache.fineract.client.models.PostPaymentTypesRequest;
-import org.apache.fineract.client.models.PostPaymentTypesResponse;
 import org.apache.fineract.integrationtests.common.BusinessDateHelper;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.PaymentTypeHelper;
@@ -591,6 +589,7 @@ public class LoanAccountChargeOffWithAdvancedPaymentAllocationTest extends BaseL
             verifyTransactions(loanId, //
                     transaction(1000.0d, "Disbursement", "01 January 2024", 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false), //
                     transaction(170.09d, "Repayment", "15 January 2024", 832.54, 167.46, 2.63, 0.0, 0.0, 0.0, 0.0, false), //
+                    transaction(5.14d, "Accrual", "31 January 2024", 0.0, 0.0, 5.14, 0.0, 0.0, 0.0, 0.0, false), //
                     transaction(835.05d, "Charge-off", "31 January 2024", 0.0, 832.54, 2.51, 0.0, 0.0, 0.0, 0.0, false) //
             );
         });
@@ -661,17 +660,17 @@ public class LoanAccountChargeOffWithAdvancedPaymentAllocationTest extends BaseL
         List<Integer> principalVariationsForBorrowerCycle = new ArrayList<>();
         List<Integer> numberOfRepaymentVariationsForBorrowerCycle = new ArrayList<>();
         List<Integer> interestRateVariationsForBorrowerCycle = new ArrayList<>();
-        List<ChargeData> charges = new ArrayList<>();
-        List<ChargeToGLAccountMapper> penaltyToIncomeAccountMappings = new ArrayList<>();
-        List<GetLoanFeeToIncomeAccountMappings> feeToIncomeAccountMappings = new ArrayList<>();
+        List<LoanProductChargeData> charges = new ArrayList<>();
+        List<LoanProductChargeToGLAccountMapper> penaltyToIncomeAccountMappings = new ArrayList<>();
+        List<LoanProductChargeToGLAccountMapper> feeToIncomeAccountMappings = new ArrayList<>();
 
         String paymentTypeName = PaymentTypeHelper.randomNameGenerator("P_T", 5);
         String description = PaymentTypeHelper.randomNameGenerator("PT_Desc", 15);
         Boolean isCashPayment = false;
-        Integer position = 1;
+        Long position = 1L;
 
-        PostPaymentTypesResponse paymentTypesResponse = paymentTypeHelper.createPaymentType(new PostPaymentTypesRequest()
-                .name(paymentTypeName).description(description).isCashPayment(isCashPayment).position(position));
+        var paymentTypesResponse = paymentTypeHelper.createPaymentType(new PaymentTypeCreateRequest().name(paymentTypeName)
+                .description(description).isCashPayment(isCashPayment).position(position));
         Long paymentTypeIdOne = paymentTypesResponse.getResourceId();
         Assertions.assertNotNull(paymentTypeIdOne);
 
@@ -689,7 +688,7 @@ public class LoanAccountChargeOffWithAdvancedPaymentAllocationTest extends BaseL
         Assertions.assertNotNull(fundID);
 
         // Delinquency Bucket
-        final Integer delinquencyBucketId = DelinquencyBucketsHelper.createDelinquencyBucket(requestSpec, responseSpec);
+        final Long delinquencyBucketId = DelinquencyBucketsHelper.createDefaultBucket();
 
         String futureInstallmentAllocationRule = "NEXT_INSTALLMENT";
         AdvancedPaymentData defaultAllocation = createDefaultPaymentAllocation(futureInstallmentAllocationRule);
@@ -751,7 +750,7 @@ public class LoanAccountChargeOffWithAdvancedPaymentAllocationTest extends BaseL
                         .repaymentEvery(true)//
                         .graceOnPrincipalAndInterestPayment(true)//
                         .graceOnArrearsAgeing(true))//
-                .allowPartialPeriodInterestCalcualtion(true)//
+                .allowPartialPeriodInterestCalculation(true)//
                 .maxTrancheCount(10)//
                 .outstandingLoanBalance(10000.0)//
                 .charges(charges)//

@@ -178,7 +178,7 @@ public final class JsonCommand {
         this.parsedCommand = parsedCommand;
         this.resourceId = resourceId;
         this.commandId = null;
-        this.jsonCommand = null;
+        this.jsonCommand = parsedCommand.toString();
         this.fromApiJsonHelper = fromApiJsonHelper;
         this.entityName = null;
         this.subresourceId = null;
@@ -362,16 +362,7 @@ public final class JsonCommand {
     }
 
     public <T extends Enum<T>> T enumValueOfParameterNamed(String parameterName, Class<T> enumType) {
-        try {
-            String value = stringValueOfParameterNamedAllowingNull(parameterName);
-            if (value != null) {
-                return Enum.valueOf(enumType, value);
-            } else {
-                return null;
-            }
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        return this.fromApiJsonHelper.enumValueOfParameterNamed(parameterName, this.parsedCommand, enumType);
     }
 
     public String stringValueOfParameterNamed(final String parameterName) {
@@ -549,7 +540,7 @@ public final class JsonCommand {
      */
     public boolean booleanPrimitiveValueOfParameterNamed(final String parameterName) {
         final Boolean value = this.fromApiJsonHelper.extractBooleanNamed(parameterName, this.parsedCommand);
-        return ObjectUtils.defaultIfNull(value, Boolean.FALSE);
+        return ObjectUtils.getIfNull(value, Boolean.FALSE);
     }
 
     public boolean isChangeInArrayParameterNamed(final String parameterName, final String[] existingValue) {
@@ -605,5 +596,4 @@ public final class JsonCommand {
     public void checkForUnsupportedParameters(final Type typeOfMap, final String json, final Set<String> requestDataParameters) {
         this.fromApiJsonHelper.checkForUnsupportedParameters(typeOfMap, json, requestDataParameters);
     }
-
 }

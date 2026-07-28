@@ -37,14 +37,17 @@ import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.integrationtests.common.savings.SavingsAccountHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsProductHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsStatusChecker;
+import org.apache.fineract.integrationtests.common.savings.SavingsTestLifecycleExtension;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @SuppressWarnings({ "rawtypes", "unused", "unchecked" })
+@ExtendWith({ SavingsTestLifecycleExtension.class })
 public class FlexibleSavingsInterestPostingIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(FlexibleSavingsInterestPostingIntegrationTest.class);
@@ -89,7 +92,7 @@ public class FlexibleSavingsInterestPostingIntegrationTest {
         ArrayList<HashMap<String, Object>> transactions = (ArrayList<HashMap<String, Object>>) accountDetails.get("transactions");
         HashMap<String, Object> interestPostingTransaction = transactions.get(transactions.size() - 2);
         for (Map.Entry<String, Object> entry : interestPostingTransaction.entrySet()) {
-            LOG.info("{} - {}", entry.getKey(), entry.getValue().toString());
+            LOG.info("{} - {}", entry.getKey(), String.valueOf(entry.getValue()));
         }
         // 1st Dec 13 to 31st March 14 - 365 days, daily compounding using daily
         // balance

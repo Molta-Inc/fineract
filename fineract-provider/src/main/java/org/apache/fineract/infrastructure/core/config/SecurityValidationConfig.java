@@ -29,7 +29,7 @@ public class SecurityValidationConfig {
     @Value("${fineract.security.basicauth.enabled}")
     private Boolean basicAuthEnabled;
 
-    @Value("${fineract.security.oauth.enabled}")
+    @Value("${fineract.security.oauth2.enabled}")
     private Boolean oauthEnabled;
 
     @Value("${fineract.security.oauth.custom.enabled}")

@@ -23,6 +23,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotNull;
 import java.time.OffsetDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -34,6 +35,7 @@ import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.domain.AbstractPersistableCustom;
 import org.apache.fineract.infrastructure.core.domain.ExternalId;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.core.service.IpAddressUtils;
 import org.apache.fineract.useradministration.domain.AppUser;
 
 @Entity
@@ -136,9 +138,14 @@ public class CommandSource extends AbstractPersistableCustom<Long> {
     @Column(name = "loan_external_id", length = 100)
     private ExternalId loanExternalId;
 
-    public static CommandSource fullEntryFrom(final CommandWrapper wrapper, final JsonCommand command, final AppUser maker,
-            String idempotencyKey, Integer status) {
+    @Column(name = "client_ip", nullable = true)
+    private String clientIp;
 
+    @Column(name = "is_sanitized", nullable = false)
+    private boolean sanitized;
+
+    public static CommandSource fullEntryFrom(final CommandWrapper wrapper, final JsonCommand command, final AppUser maker,
+            String idempotencyKey, Integer status, boolean sanitized) {
         return CommandSource.builder() //
                 .actionName(wrapper.actionName()) //
                 .entityName(wrapper.entityName()) //
@@ -159,31 +166,53 @@ public class CommandSource extends AbstractPersistableCustom<Long> {
                 .transactionId(command.getTransactionId()) //
                 .creditBureauId(command.getCreditBureauId()) //
                 .organisationCreditBureauId(command.getOrganisationCreditBureauId()) //
-                .loanExternalId(command.getLoanExternalId()).build(); //
+                .clientIp(IpAddressUtils.getClientIp()) //
+                .loanExternalId(command.getLoanExternalId()).sanitized(sanitized).build(); //
     }
 
     public String getPermissionCode() {
         return this.actionName + "_" + this.entityName;
     }
 
-    public void markAsAwaitingApproval() {
-        this.status = CommandProcessingResultType.AWAITING_APPROVAL.getValue();
+    @NotNull
+    public CommandProcessingResultType getStatusEnum() {
+        return CommandProcessingResultType.fromInt(status);
     }
 
-    public boolean isMarkedAsAwaitingApproval() {
-        return this.status.equals(CommandProcessingResultType.AWAITING_APPROVAL.getValue());
+    public void setStatus(@NotNull CommandProcessingResultType status) {
+        this.status = status.getValue();
+    }
+
+    public void markAsAwaitingApproval() {
+        setStatus(CommandProcessingResultType.AWAITING_APPROVAL);
+    }
+
+    public boolean isAwaitingApproval() {
+        return getStatusEnum().isAwaitingApproval();
+    }
+
+    public boolean isProcessed() {
+        return getStatusEnum().isProcessed();
     }
 
     public void markAsChecked(final AppUser checker) {
         this.checker = checker;
         this.checkedOnDate = DateUtils.getAuditOffsetDateTime();
-        this.status = CommandProcessingResultType.PROCESSED.getValue();
+        setStatus(CommandProcessingResultType.PROCESSED);
+    }
+
+    public boolean isChecked() {
+        return checker != null && isProcessed();
     }
 
     public void markAsRejected(final AppUser checker) {
         this.checker = checker;
         this.checkedOnDate = DateUtils.getAuditOffsetDateTime();
-        this.status = CommandProcessingResultType.REJECTED.getValue();
+        setStatus(CommandProcessingResultType.REJECTED);
+    }
+
+    public boolean isRejected() {
+        return checker != null && isRejected();
     }
 
     public void updateForAudit(final CommandProcessingResult result) {

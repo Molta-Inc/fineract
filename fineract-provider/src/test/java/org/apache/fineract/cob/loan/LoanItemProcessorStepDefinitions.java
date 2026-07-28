@@ -25,7 +25,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.cucumber.java8.En;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -33,16 +32,17 @@ import java.util.Collections;
 import java.util.TreeMap;
 import org.apache.fineract.cob.COBBusinessStepService;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.service.ProgressiveLoanModelProcessingService;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.StepExecution;
 import org.springframework.batch.item.ExecutionContext;
 
-@SuppressFBWarnings(value = "RV_EXCEPTION_NOT_THROWN", justification = "False positive")
 public class LoanItemProcessorStepDefinitions implements En {
 
     private COBBusinessStepService cobBusinessStepService = mock(COBBusinessStepService.class);
+    private ProgressiveLoanModelProcessingService progressiveLoanModelProcessingService = mock(ProgressiveLoanModelProcessingService.class);
 
-    private LoanItemProcessor loanItemProcessor = new LoanItemProcessor(cobBusinessStepService);
+    private LoanItemProcessor loanItemProcessor = new LoanItemProcessor(cobBusinessStepService, progressiveLoanModelProcessingService);
 
     private Loan loan = mock(Loan.class);
 

@@ -87,10 +87,6 @@ final class RecurringDepositProductsApiResourceSwagger {
         public Integer interestCalculationDaysInYearType;
         @Schema(example = "1")
         public Integer accountingRule;
-        @Schema(example = "1")
-        public Integer recurringDepositFrequency;
-        @Schema(example = "2")
-        public Integer recurringDepositFrequencyTypeId;
         @Schema(example = "true")
         public Boolean preClosurePenalApplicable;
         @Schema(example = "1.75")
@@ -120,7 +116,7 @@ final class RecurringDepositProductsApiResourceSwagger {
         private PostRecurringDepositProductsResponse() {}
 
         @Schema(example = "1")
-        public Integer resourceId;
+        public Long resourceId;
     }
 
     @Schema(description = "PutRecurringDepositProductsRequest")
@@ -154,7 +150,7 @@ final class RecurringDepositProductsApiResourceSwagger {
         }
 
         @Schema(example = "1")
-        public Integer resourceId;
+        public Long resourceId;
         public PutRecurringDepositProductsChanges changes;
     }
 
@@ -546,6 +542,6 @@ final class RecurringDepositProductsApiResourceSwagger {
         private DeleteRecurringDepositProductsProductIdResponse() {}
 
         @Schema(example = "1")
-        public Integer resourceId;
+        public Long resourceId;
     }
 }

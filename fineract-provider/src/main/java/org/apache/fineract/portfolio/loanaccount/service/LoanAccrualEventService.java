@@ -50,7 +50,7 @@ public class LoanAccrualEventService {
             LoanStatus status = loan.getStatus();
             if (status.isClosedObligationsMet() || status.isOverpaid()) {
                 log.debug("Loan closure on accrual for loan {}", loan.getId());
-                loanAccrualsProcessingService.processAccrualsOnLoanClosure(loan);
+                loanAccrualsProcessingService.processAccrualsOnLoanClosure(loan, true);
                 loanAccrualActivityProcessingService.processAccrualActivityForLoanClosure(loan);
             }
         }
@@ -64,7 +64,7 @@ public class LoanAccrualEventService {
             LoanStatus status = loan.getStatus();
             if (status.isClosedObligationsMet() || status.isOverpaid()) {
                 log.debug("Loan balance change on accrual for loan {}", loan.getId());
-                loanAccrualsProcessingService.processAccrualsOnLoanClosure(loan);
+                loanAccrualsProcessingService.processAccrualsOnLoanClosure(loan, true);
                 loanAccrualActivityProcessingService.processAccrualActivityForLoanClosure(loan);
             }
         }

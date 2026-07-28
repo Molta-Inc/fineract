@@ -37,7 +37,6 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
 
     public void reprocess(final MonetaryCurrency currency, final LocalDate disbursementDate,
             final List<LoanRepaymentScheduleInstallment> installments, LoanCharge loanCharge) {
-        Loan loan = loanCharge.getLoan();
         Money zero = Money.zero(currency);
         Money totalInterest = zero;
         Money totalPrincipal = zero;
@@ -133,7 +132,7 @@ public class SingleLoanChargeRepaymentScheduleProcessingWrapper {
             // Then we need to get as of this loan charge due date how much amount disbursed.
             for (final LoanDisbursementDetails loanDisbursementDetails : loan.getDisbursementDetails()) {
                 if (!DateUtils.isAfter(loanDisbursementDetails.expectedDisbursementDate(), loanCharge.getDueDate())) {
-                    baseAmount = MathUtil.add(baseAmount, loanDisbursementDetails.principal());
+                    baseAmount = MathUtil.add(baseAmount, loanDisbursementDetails.getPrincipal());
                 }
             }
         } else {

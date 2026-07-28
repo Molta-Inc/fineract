@@ -19,6 +19,7 @@
 package org.apache.fineract.commands.service;
 
 import com.google.gson.JsonElement;
+import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,7 @@ import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDoma
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
+import org.apache.fineract.infrastructure.dataqueries.service.CleanupService;
 import org.apache.fineract.infrastructure.jobs.service.SchedulerJobRunnerReadService;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.useradministration.domain.AppUser;
@@ -49,13 +51,14 @@ public class PortfolioCommandSourceWritePlatformServiceImpl implements Portfolio
     private final CommandProcessingService processAndLogCommandService;
     private final SchedulerJobRunnerReadService schedulerJobRunnerReadService;
     private final ConfigurationDomainService configurationService;
+    private final List<CleanupService> cleanupServices;
 
     @Override
     public CommandProcessingResult logCommandSource(final CommandWrapper wrapper) {
         boolean isApprovedByChecker = false;
 
         // check if is update of own account details
-        if (wrapper.isUpdateOfOwnUserDetails(this.context.authenticatedUser(wrapper).getId())) {
+        if (wrapper.isChangeOfOwnUserDetails(this.context.authenticatedUser(wrapper).getId())) {
             // then allow this operation to proceed.
             // maker checker doesnt mean anything here.
             isApprovedByChecker = true; // set to true in case permissions have
@@ -117,7 +120,7 @@ public class PortfolioCommandSourceWritePlatformServiceImpl implements Portfolio
     private CommandSource validateMakerCheckerTransaction(final Long makerCheckerId) {
         final CommandSource commandSource = this.commandSourceRepository.findById(makerCheckerId)
                 .orElseThrow(() -> new CommandNotFoundException(makerCheckerId));
-        if (!commandSource.isMarkedAsAwaitingApproval()) {
+        if (!commandSource.isAwaitingApproval()) {
             throw new CommandNotAwaitingApprovalException(makerCheckerId);
         }
         AppUser appUser = this.context.authenticatedUser();
@@ -146,6 +149,11 @@ public class PortfolioCommandSourceWritePlatformServiceImpl implements Portfolio
         final AppUser maker = this.context.authenticatedUser();
         commandSourceInput.markAsRejected(maker);
         this.commandSourceRepository.save(commandSourceInput);
+        if (cleanupServices != null) {
+            for (CleanupService cleanupService : cleanupServices) {
+                cleanupService.cleanup(commandSourceInput);
+            }
+        }
         return makerCheckerId;
     }
 }

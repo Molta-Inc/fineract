@@ -35,10 +35,12 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.data.ApiParameterError;
 import org.apache.fineract.infrastructure.core.data.DataValidatorBuilder;
+import org.apache.fineract.infrastructure.core.exception.GeneralPlatformDomainRuleException;
 import org.apache.fineract.infrastructure.core.exception.InvalidJsonException;
 import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidationException;
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
+import org.apache.fineract.infrastructure.core.service.MathUtil;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanCharge;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanRepaymentScheduleInstallment;
@@ -72,12 +74,17 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
     @Qualifier("progressiveLoanRescheduleRequestDataValidatorImpl")
     private final LoanRescheduleRequestDataValidator progressiveLoanRescheduleRequestDataValidatorDelegate;
 
-    public static BigDecimal validateInterestRate(FromJsonHelper fromJsonHelper, JsonElement jsonElement,
-            DataValidatorBuilder dataValidatorBuilder) {
+    public static BigDecimal validateInterestRate(final BigDecimal currentInterestRate, final FromJsonHelper fromJsonHelper,
+            final JsonElement jsonElement, DataValidatorBuilder dataValidatorBuilder) {
         final BigDecimal interestRate = fromJsonHelper
                 .extractBigDecimalWithLocaleNamed(RescheduleLoansApiConstants.newInterestRateParamName, jsonElement);
         dataValidatorBuilder.reset().parameter(RescheduleLoansApiConstants.newInterestRateParamName).value(interestRate).ignoreIfNull()
                 .positiveAmount();
+        if (interestRate != null && MathUtil.isZero(currentInterestRate) && !MathUtil.isZero(interestRate)) {
+            dataValidatorBuilder.reset().failWithCode(RescheduleLoansApiConstants.newInterestRateParamName,
+                    RescheduleLoansApiConstants.rescheduleNotAllowedFromInterestRateZeroErrorCode,
+                    "Loan rescheduling is not allowed from interest rate 0 (zero)");
+        }
         return interestRate;
     }
 
@@ -91,7 +98,7 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
         }
     }
 
-    public static void validateEMIAndEndDate(FromJsonHelper fromJsonHelper, Loan loan, JsonElement jsonElement,
+    public static void validateEMIAndEndDate(FromJsonHelper fromJsonHelper, JsonElement jsonElement, LocalDate rescheduleFromDate,
             DataValidatorBuilder dataValidatorBuilder) {
         final LocalDate endDate = fromJsonHelper.extractLocalDateNamed(RescheduleLoansApiConstants.endDateParamName, jsonElement);
         final BigDecimal emi = fromJsonHelper.extractBigDecimalWithLocaleNamed(RescheduleLoansApiConstants.emiParamName, jsonElement);
@@ -99,13 +106,9 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
             dataValidatorBuilder.reset().parameter(RescheduleLoansApiConstants.endDateParamName).value(endDate).notNull();
             dataValidatorBuilder.reset().parameter(RescheduleLoansApiConstants.emiParamName).value(emi).notNull().positiveAmount();
 
-            if (endDate != null) {
-                LoanRepaymentScheduleInstallment endInstallment = loan.fetchLoanRepaymentScheduleInstallmentByDueDate(endDate);
-
-                if (endInstallment == null) {
-                    dataValidatorBuilder.reset().parameter(RescheduleLoansApiConstants.endDateParamName)
-                            .failWithCode("repayment.schedule.installment.does.not.exist", "Repayment schedule installment does not exist");
-                }
+            if (endDate != null && DateUtils.isBefore(endDate, rescheduleFromDate)) {
+                dataValidatorBuilder.reset().parameter(RescheduleLoansApiConstants.endDateParamName)
+                        .failWithCode("end.date.before.reschedule.from.date", "End date cannot be before the reschedule from date");
             }
         }
     }
@@ -188,6 +191,12 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
         }
     }
 
+    public static void validateLoanStatusIsActiveOrClosed(Loan loan, DataValidatorBuilder dataValidatorBuilder) {
+        if (!loan.getStatus().isActive() && !loan.getStatus().isClosed() && !loan.getStatus().isOverpaid()) {
+            dataValidatorBuilder.reset().failWithCode("loan.is.not.active.or.closed", "Loan is not active or closed");
+        }
+    }
+
     public static void validateSupportedParameters(JsonCommand jsonCommand, Set<String> createRequestDataParameters) {
         final String jsonString = jsonCommand.json();
 
@@ -237,6 +246,11 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
         if (loan.getLoanProductRelatedDetail().getLoanScheduleType() == LoanScheduleType.PROGRESSIVE) {
             progressiveLoanRescheduleRequestDataValidatorDelegate.validateForCreateAction(jsonCommand, loan);
         } else {
+            if (loan.isChargedOff()) {
+                throw new GeneralPlatformDomainRuleException("error.msg.loan.is.charged.off",
+                        "Loan: " + loan.getId() + " reschedule installment is not allowed. Loan Account is Charged-off", loan.getId());
+            }
+
             validateSupportedParameters(jsonCommand, CREATE_REQUEST_DATA_PARAMETERS);
             final List<ApiParameterError> dataValidationErrors = new ArrayList<>();
             final DataValidatorBuilder dataValidatorBuilder = new DataValidatorBuilder(dataValidationErrors)
@@ -246,14 +260,15 @@ public class LoanRescheduleRequestDataValidatorImpl implements LoanRescheduleReq
             validateLoanIsActive(loan, dataValidatorBuilder);
             validateSubmittedOnDate(fromJsonHelper, loan, jsonElement, dataValidatorBuilder);
             final LocalDate rescheduleFromDate = validateAndRetrieveRescheduleFromDate(fromJsonHelper, jsonElement, dataValidatorBuilder);
-            validateInterestRate(fromJsonHelper, jsonElement, dataValidatorBuilder);
+            validateInterestRate(loan.getLoanRepaymentScheduleDetail().getAnnualNominalInterestRate(), fromJsonHelper, jsonElement,
+                    dataValidatorBuilder);
             validateGraceOnPrincipal(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateGraceOnInterest(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateExtraTerms(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateRescheduleReasonId(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateRescheduleReasonComment(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateAndRetrieveAdjustedDate(fromJsonHelper, jsonElement, rescheduleFromDate, dataValidatorBuilder);
-            validateEMIAndEndDate(fromJsonHelper, loan, jsonElement, dataValidatorBuilder);
+            validateEMIAndEndDate(fromJsonHelper, jsonElement, rescheduleFromDate, dataValidatorBuilder);
             validateIsThereAnyIncomingChange(fromJsonHelper, jsonElement, dataValidatorBuilder);
             validateMultiDisburseLoan(loan, dataValidatorBuilder);
 

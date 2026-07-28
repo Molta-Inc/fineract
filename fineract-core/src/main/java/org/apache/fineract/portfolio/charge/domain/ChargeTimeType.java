@@ -18,26 +18,27 @@
  */
 package org.apache.fineract.portfolio.charge.domain;
 
+import java.util.List;
+
 public enum ChargeTimeType {
 
     INVALID(0, "chargeTimeType.invalid"), //
     DISBURSEMENT(1, "chargeTimeType.disbursement"), // only for loan charges
-    SPECIFIED_DUE_DATE(2, "chargeTimeType.specifiedDueDate"), // for loan and
-    SAVINGS_ACTIVATION(3, "chargeTimeType.savingsActivation"), // only for
+    SPECIFIED_DUE_DATE(2, "chargeTimeType.specifiedDueDate"), // for loan and savings
+    SAVINGS_ACTIVATION(3, "chargeTimeType.savingsActivation"), // only for savings
     SAVINGS_CLOSURE(4, "chargeTimeType.savingsClosure"), // only for savings
     WITHDRAWAL_FEE(5, "chargeTimeType.withdrawalFee"), // only for savings
     ANNUAL_FEE(6, "chargeTimeType.annualFee"), // only for savings
     MONTHLY_FEE(7, "chargeTimeType.monthlyFee"), // only for savings
     INSTALMENT_FEE(8, "chargeTimeType.instalmentFee"), // only for loan charges
-    OVERDUE_INSTALLMENT(9, "chargeTimeType.overdueInstallment"), // only for
+    OVERDUE_INSTALLMENT(9, "chargeTimeType.overdueInstallment"), // only for loans
     OVERDRAFT_FEE(10, "chargeTimeType.overdraftFee"), // only for savings
     WEEKLY_FEE(11, "chargeTimeType.weeklyFee"), // only for savings
-    TRANCHE_DISBURSEMENT(12, "chargeTimeType.tranchedisbursement"), // only for
-                                                                    // loan
-    SHAREACCOUNT_ACTIVATION(13, "chargeTimeType.activation"), // only for loan
-    SHARE_PURCHASE(14, "chargeTimeType.sharespurchase"), SHARE_REDEEM(15, "chargeTimeType.sharesredeem"),
-
-    SAVINGS_NOACTIVITY_FEE(16, "chargeTimeType.savingsNoActivityFee");
+    TRANCHE_DISBURSEMENT(12, "chargeTimeType.tranchedisbursement"), // only for loans
+    SHAREACCOUNT_ACTIVATION(13, "chargeTimeType.activation"), // only for shares
+    SHARE_PURCHASE(14, "chargeTimeType.sharespurchase"), // only for shares
+    SHARE_REDEEM(15, "chargeTimeType.sharesredeem"), // only for shares
+    SAVINGS_NOACTIVITY_FEE(16, "chargeTimeType.savingsNoActivityFee"); // only for savings
 
     private final Integer value;
     private final String code;
@@ -59,6 +60,14 @@ public enum ChargeTimeType {
         return new Integer[] { ChargeTimeType.DISBURSEMENT.getValue(), ChargeTimeType.SPECIFIED_DUE_DATE.getValue(),
                 ChargeTimeType.INSTALMENT_FEE.getValue(), ChargeTimeType.OVERDUE_INSTALLMENT.getValue(),
                 ChargeTimeType.TRANCHE_DISBURSEMENT.getValue() };
+    }
+
+    public static List<ChargeTimeType> validWorkingCapitalLoan() {
+        return List.of(ChargeTimeType.SPECIFIED_DUE_DATE);
+    }
+
+    public static Object[] validWorkingCapitalLoanValues() {
+        return validWorkingCapitalLoan().stream().map(ChargeTimeType::getValue).toArray();
     }
 
     public static Object[] validLoanChargeValues() {
@@ -222,4 +231,9 @@ public enum ChargeTimeType {
     public boolean isSharesRedeem() {
         return this.equals(ChargeTimeType.SHARE_REDEEM);
     }
+
+    public boolean isDisbursementOrTrancheDisbursementCharge() {
+        return isTimeOfDisbursement() || isTrancheDisbursement();
+    }
+
 }

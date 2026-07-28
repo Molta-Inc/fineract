@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import javax.sql.DataSource;
 import org.apache.fineract.infrastructure.core.auditing.JpaAuditingHandlerRegistrar;
 import org.apache.fineract.infrastructure.core.domain.AuditorAwareImpl;
 import org.apache.fineract.infrastructure.core.persistence.DatabaseSelectingPersistenceUnitPostProcessor;
@@ -37,8 +38,10 @@ import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.domain.AuditorAware;
@@ -51,13 +54,15 @@ import org.springframework.orm.jpa.persistenceunit.PersistenceUnitManager;
 import org.springframework.orm.jpa.persistenceunit.PersistenceUnitPostProcessor;
 import org.springframework.orm.jpa.vendor.AbstractJpaVendorAdapter;
 import org.springframework.orm.jpa.vendor.EclipseLinkJpaVendorAdapter;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.jta.JtaTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration
 @EnableJpaAuditing
-@EnableJpaRepositories(basePackages = { "org.apache.fineract.**.domain", "org.apache.fineract.**.repository" })
+@EnableJpaRepositories(basePackages = { "org.apache.fineract.**.domain",
+        "org.apache.fineract.**.repository" }, excludeFilters = @ComponentScan.Filter(type = FilterType.REGEX, pattern = {
+                "org\\.apache\\.fineract\\.command\\.jdbc\\.store\\.domain\\..*",
+                "org\\.apache\\.fineract\\.infrastructure\\.documentmanagement\\.domain\\..*Repository",
+                "org\\.apache\\.fineract\\.mix\\.domain\\..*Repository" }))
 @EnableConfigurationProperties(JpaProperties.class)
 @Import(JpaAuditingHandlerRegistrar.class)
 public class JPAConfig extends JpaBaseConfiguration {
@@ -78,14 +83,14 @@ public class JPAConfig extends JpaBaseConfiguration {
     @DependsOn("tenantDatabaseUpgradeService")
     public LocalContainerEntityManagerFactoryBean entityManagerFactory(EntityManagerFactoryBuilder factoryBuilder,
             PersistenceManagedTypes persistenceManagedTypes) {
-        Map<String, Object> vendorProperties = getVendorProperties();
+        Map<String, Object> vendorProperties = getVendorProperties(getDataSource());
         String[] packagesToScan = getPackagesToScan();
         return factoryBuilder.dataSource(getDataSource()).properties(vendorProperties).persistenceUnit("jpa-pu").packages(packagesToScan)
                 .jta(false).build();
     }
 
     @Override
-    protected Map<String, Object> getVendorProperties() {
+    protected Map<String, Object> getVendorProperties(DataSource dataSource) {
         Map<String, Object> vendorProperties = new HashMap<>();
         vendorProperties.put(PersistenceUnitProperties.WEAVING, "static");
         vendorProperties.put(PersistenceUnitProperties.PERSISTENCE_CONTEXT_CLOSE_ON_COMMIT, "true");
@@ -127,10 +132,4 @@ public class JPAConfig extends JpaBaseConfiguration {
         return new AuditorAwareImpl();
     }
 
-    @Bean
-    public TransactionTemplate txTemplate(PlatformTransactionManager transactionManager) {
-        TransactionTemplate tt = new TransactionTemplate();
-        tt.setTransactionManager(transactionManager);
-        return tt;
-    }
 }

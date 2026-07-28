@@ -18,12 +18,11 @@
  */
 package org.apache.fineract.portfolio.loanaccount.service;
 
-import java.math.MathContext;
 import java.time.LocalDate;
 import java.util.List;
-import org.apache.fineract.organisation.monetary.domain.MonetaryCurrency;
 import org.apache.fineract.organisation.monetary.domain.Money;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTermVariations;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
 import org.apache.fineract.portfolio.loanaccount.domain.transactionprocessor.LoanRepaymentScheduleTransactionProcessor;
 import org.springframework.transaction.annotation.Propagation;
@@ -35,7 +34,6 @@ public interface InterestRefundService {
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
     Money totalInterestByTransactions(LoanRepaymentScheduleTransactionProcessor processor, Long loanId,
-            LocalDate relatedRefundTransactionDate, List<LoanTransaction> newTransactions, List<Long> oldTransactionIds);
-
-    Money getTotalInterestRefunded(List<LoanTransaction> loanTransactions, MonetaryCurrency currency, MathContext mc);
+            LocalDate relatedRefundTransactionDate, List<LoanTransaction> newTransactions, List<Long> oldTransactionIds,
+            List<LoanTermVariations> activeLoanTermVariations);
 }

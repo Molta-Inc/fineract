@@ -18,10 +18,14 @@
  */
 package org.apache.fineract.accounting.glaccount.service;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.common.AccountingEnumerations;
@@ -39,9 +43,11 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class GLAccountReadPlatformServiceImpl implements GLAccountReadPlatformService {
 
     private static final String NAME_DECORATED_BASE_ON_HIERARCHY = "concat(substring('........................................', 1, ((LENGTH(hierarchy) - LENGTH(REPLACE(hierarchy, '.', '')) - 1) * 4)), name)";
@@ -187,7 +193,7 @@ public class GLAccountReadPlatformServiceImpl implements GLAccountReadPlatformSe
         sql += " ORDER BY gl_code ASC";
 
         final Object[] finalObjectArray = Arrays.copyOf(parameterArray, arrayPos);
-        return this.jdbcTemplate.query(sql, rm, (Object[]) finalObjectArray);// NOSONAR
+        return this.jdbcTemplate.query(sql, rm, finalObjectArray);
     }
 
     @Override
@@ -253,7 +259,7 @@ public class GLAccountReadPlatformServiceImpl implements GLAccountReadPlatformSe
     public List<GLAccountDataForLookup> retrieveAccountsByTagId(final Long ruleId, final Integer transactionType) {
         final GLAccountDataLookUpMapper mapper = new GLAccountDataLookUpMapper();
         final String sql = "Select " + GLAccountDataLookUpMapper.LOOKUP_SCHEMA + " where rule.id=? and tags.acc_type_enum=?";
-        return this.jdbcTemplate.query(sql, mapper, (Object[]) new Object[] { ruleId, transactionType });// NOSONAR
+        return this.jdbcTemplate.query(sql, mapper, ruleId, transactionType);
     }
 
     private static final class GLAccountDataLookUpMapper implements RowMapper<GLAccountDataForLookup> {
@@ -267,6 +273,137 @@ public class GLAccountReadPlatformServiceImpl implements GLAccountReadPlatformSe
             final String glCode = rs.getString("glCode");
 
             return new GLAccountDataForLookup().setId(id).setName(name).setGlCode(glCode);
+        }
+    }
+
+    @Override
+    public Map<String, BigDecimal> retrieveGLAccountBalance(final long glAccountId) {
+        try {
+            // First, verify the account exists
+            final String accountCheckSql = "SELECT id FROM acc_gl_account WHERE id = ?";
+            this.jdbcTemplate.queryForObject(accountCheckSql, Long.class, glAccountId);
+
+            // Retrieve balance from the materialized balance table (acc_gl_account_balance)
+            // This table is automatically maintained by database trigger on acc_gl_journal_entry
+            // Much faster than summing all journal entries on every query
+            final String balanceSql = "SELECT "
+                    + "COALESCE(balance, 0) as balance, "
+                    + "COALESCE(total_debits, 0) as totalDebits, "
+                    + "COALESCE(total_credits, 0) as totalCredits "
+                    + "FROM acc_gl_account_balance WHERE account_id = ?";
+
+            try {
+                return this.jdbcTemplate.queryForObject(balanceSql, (rs, rowNum) -> {
+                    return Map.of(
+                        "balance", rs.getBigDecimal("balance"),
+                        "totalDebits", rs.getBigDecimal("totalDebits"),
+                        "totalCredits", rs.getBigDecimal("totalCredits")
+                    );
+                }, glAccountId);
+            } catch (final EmptyResultDataAccessException e) {
+                // If no balance record exists yet (no journal entries for this account), return zeros
+                return Map.of(
+                    "balance", BigDecimal.ZERO,
+                    "totalDebits", BigDecimal.ZERO,
+                    "totalCredits", BigDecimal.ZERO
+                );
+            }
+
+        } catch (final EmptyResultDataAccessException e) {
+            throw new GLAccountNotFoundException(glAccountId, e);
+        }
+    }
+
+    @Override
+    public List<Map<String, BigDecimal>> retrieveGLAccountBalances(final List<Long> glAccountIds) {
+        if (glAccountIds == null || glAccountIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        final List<Map<String, BigDecimal>> results = new ArrayList<>();
+
+        for (final Long glAccountId : glAccountIds) {
+            try {
+                // First, verify the account exists
+                final String accountCheckSql = "SELECT id FROM acc_gl_account WHERE id = ?";
+                this.jdbcTemplate.queryForObject(accountCheckSql, Long.class, glAccountId);
+
+                // Retrieve balance from the materialized balance table
+                final String balanceSql = "SELECT "
+                        + "COALESCE(balance, 0) as balance, "
+                        + "COALESCE(total_debits, 0) as totalDebits, "
+                        + "COALESCE(total_credits, 0) as totalCredits "
+                        + "FROM acc_gl_account_balance WHERE account_id = ?";
+
+                try {
+                    final Map<String, BigDecimal> balanceData = this.jdbcTemplate.queryForObject(balanceSql, (rs, rowNum) -> {
+                        return Map.of(
+                            "glAccountId", BigDecimal.valueOf(glAccountId),
+                            "balance", rs.getBigDecimal("balance"),
+                            "totalDebits", rs.getBigDecimal("totalDebits"),
+                            "totalCredits", rs.getBigDecimal("totalCredits")
+                        );
+                    }, glAccountId);
+                    results.add(balanceData);
+                } catch (final EmptyResultDataAccessException e) {
+                    // If no balance record exists yet (no journal entries for this account), return zeros
+                    results.add(Map.of(
+                        "glAccountId", BigDecimal.valueOf(glAccountId),
+                        "balance", BigDecimal.ZERO,
+                        "totalDebits", BigDecimal.ZERO,
+                        "totalCredits", BigDecimal.ZERO
+                    ));
+                }
+
+            } catch (final EmptyResultDataAccessException e) {
+                // Account doesn't exist - return null for this account instead of throwing error
+                results.add(null);
+            }
+        }
+
+        return results;
+    }
+
+    @Override
+    public Map<String, Object> retrieveGLAccountBalancesTotalByCodePattern(final String glCodePattern) {
+        if (glCodePattern == null || glCodePattern.trim().isEmpty()) {
+            return Map.of(
+                "totalBalance", BigDecimal.ZERO,
+                "totalDebits", BigDecimal.ZERO,
+                "totalCredits", BigDecimal.ZERO,
+                "accountCount", 0L
+            );
+        }
+
+        // SQL to retrieve aggregated totals for all accounts matching the pattern
+        final String sql = "SELECT "
+                + "COUNT(gl.id) as accountCount, "
+                + "COALESCE(SUM(bal.balance), 0) as totalBalance, "
+                + "COALESCE(SUM(bal.total_debits), 0) as totalDebits, "
+                + "COALESCE(SUM(bal.total_credits), 0) as totalCredits "
+                + "FROM acc_gl_account gl "
+                + "LEFT JOIN acc_gl_account_balance bal ON gl.id = bal.account_id "
+                + "WHERE gl.gl_code LIKE ?";
+
+        final String likePattern = glCodePattern + "%";
+
+        try {
+            return this.jdbcTemplate.queryForObject(sql, (rs, rowNum) -> {
+                return Map.of(
+                    "totalBalance", (Object) rs.getBigDecimal("totalBalance"),
+                    "totalDebits", (Object) rs.getBigDecimal("totalDebits"),
+                    "totalCredits", (Object) rs.getBigDecimal("totalCredits"),
+                    "accountCount", (Object) rs.getLong("accountCount")
+                );
+            }, likePattern);
+        } catch (final EmptyResultDataAccessException e) {
+            // No matching accounts found
+            return Map.of(
+                "totalBalance", BigDecimal.ZERO,
+                "totalDebits", BigDecimal.ZERO,
+                "totalCredits", BigDecimal.ZERO,
+                "accountCount", 0L
+            );
         }
     }
 }

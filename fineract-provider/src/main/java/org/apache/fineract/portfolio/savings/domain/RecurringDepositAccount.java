@@ -59,6 +59,7 @@ import org.apache.fineract.portfolio.common.domain.PeriodFrequencyType;
 import org.apache.fineract.portfolio.group.domain.Group;
 import org.apache.fineract.portfolio.interestratechart.domain.InterestRateChart;
 import org.apache.fineract.portfolio.savings.DepositAccountOnClosureType;
+import org.apache.fineract.portfolio.savings.DepositAccountType;
 import org.apache.fineract.portfolio.savings.DepositAccountUtils;
 import org.apache.fineract.portfolio.savings.DepositsApiConstants;
 import org.apache.fineract.portfolio.savings.PreClosurePenalInterestOnType;
@@ -216,9 +217,9 @@ public class RecurringDepositAccount extends SavingsAccount {
                 penalInterest = this.accountTermAndPreClosure.depositPreClosureDetail().preClosurePenalInterest();
                 final PreClosurePenalInterestOnType preClosurePenalInterestOnType = this.accountTermAndPreClosure.depositPreClosureDetail()
                         .preClosurePenalInterestOnType();
-                if (preClosurePenalInterestOnType.isWholeTerm()) {
+                if (preClosurePenalInterestOnType == PreClosurePenalInterestOnType.WHOLE_TERM) {
                     depositCloseDate = interestCalculatedUpto();
-                } else if (preClosurePenalInterestOnType.isTillPrematureWithdrawal()) {
+                } else if (preClosurePenalInterestOnType == PreClosurePenalInterestOnType.TILL_PREMATURE_WITHDRAWAL) {
                     depositCloseDate = interestPostingUpToDate;
                 }
             }
@@ -536,11 +537,11 @@ public class RecurringDepositAccount extends SavingsAccount {
         return Money.of(this.currency, this.minRequiredOpeningBalance);
     }
 
-    protected void processAccountUponActivation(final DateTimeFormatter fmt, final boolean postReversals) {
+    protected void processAccountUponActivation(final DateTimeFormatter fmt, final boolean postReversals,
+            final Long relaxingDaysConfigForPivotDate) {
         final Money minRequiredOpeningBalance = Money.of(this.currency, this.minRequiredOpeningBalance);
         final boolean backdatedTxnsAllowedTill = false;
         String refNo = null;
-        final Long relaxingDaysConfigForPivotDate = this.configurationDomainService.retrieveRelaxingDaysConfigForPivotDate();
         if (minRequiredOpeningBalance.isGreaterThanZero()) {
             final SavingsAccountTransactionDTO transactionDTO = new SavingsAccountTransactionDTO(fmt, getActivationDate(),
                     minRequiredOpeningBalance.getAmount(), null, null, accountType);
@@ -751,15 +752,6 @@ public class RecurringDepositAccount extends SavingsAccount {
     }
 
     @Override
-    public void postInterest(final MathContext mc, final LocalDate postingDate, final boolean isInterestTransfer,
-            final boolean isSavingsInterestPostingAtCurrentPeriodEnd, final Integer financialYearBeginningMonth,
-            final LocalDate postInterestAson, final boolean backdatedTxnsAllowedTill, final boolean postReversals) {
-        final LocalDate interestPostingUpToDate = interestPostingUpToDate(postingDate);
-        super.postInterest(mc, interestPostingUpToDate, isInterestTransfer, isSavingsInterestPostingAtCurrentPeriodEnd,
-                financialYearBeginningMonth, postInterestAson, backdatedTxnsAllowedTill, postReversals);
-    }
-
-    @Override
     public List<PostingPeriod> calculateInterestUsing(final MathContext mc, final LocalDate postingDate, boolean isInterestTransfer,
             final boolean isSavingsInterestPostingAtCurrentPeriodEnd, final Integer financialYearBeginningMonth,
             final LocalDate postAsInterestOn, final boolean backdatedTxnsAllowedTill, final boolean postReversals) {
@@ -768,7 +760,8 @@ public class RecurringDepositAccount extends SavingsAccount {
                 financialYearBeginningMonth, postAsInterestOn, backdatedTxnsAllowedTill, postReversals);
     }
 
-    private LocalDate interestPostingUpToDate(final LocalDate interestPostingDate) {
+    @Override
+    public LocalDate interestPostingUpToDate(final LocalDate interestPostingDate) {
         LocalDate interestPostingUpToDate = interestPostingDate;
         final LocalDate uptoMaturityDate = interestCalculatedUpto();
         if (uptoMaturityDate != null && DateUtils.isBefore(uptoMaturityDate, interestPostingDate)) {
@@ -1259,5 +1252,10 @@ public class RecurringDepositAccount extends SavingsAccount {
 
     public BigDecimal getDepositAmount() {
         return this.accountTermAndPreClosure.depositAmount();
+    }
+
+    @Override
+    public DepositAccountType depositAccountType() {
+        return DepositAccountType.fromInt(300);
     }
 }

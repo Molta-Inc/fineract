@@ -36,18 +36,16 @@ import java.util.List;
 import java.util.UUID;
 import org.apache.fineract.client.models.AdvancedPaymentData;
 import org.apache.fineract.client.models.AllowAttributeOverrides;
-import org.apache.fineract.client.models.ChargeData;
-import org.apache.fineract.client.models.ChargeToGLAccountMapper;
-import org.apache.fineract.client.models.GetLoanFeeToIncomeAccountMappings;
 import org.apache.fineract.client.models.GetLoanPaymentChannelToFundSourceMappings;
 import org.apache.fineract.client.models.GetLoanProductsProductIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
+import org.apache.fineract.client.models.LoanProductChargeData;
+import org.apache.fineract.client.models.LoanProductChargeToGLAccountMapper;
+import org.apache.fineract.client.models.PaymentTypeCreateRequest;
 import org.apache.fineract.client.models.PostLoanProductsRequest;
 import org.apache.fineract.client.models.PostLoanProductsResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsResponse;
 import org.apache.fineract.client.models.PostLoansLoanIdTransactionsTransactionIdRequest;
-import org.apache.fineract.client.models.PostPaymentTypesRequest;
-import org.apache.fineract.client.models.PostPaymentTypesResponse;
 import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
 import org.apache.fineract.infrastructure.businessdate.domain.BusinessDateType;
 import org.apache.fineract.infrastructure.configuration.api.GlobalConfigurationConstants;
@@ -174,16 +172,16 @@ public class UndoRepaymentWithDownPaymentIntegrationTest extends BaseLoanIntegra
                 .makeLoanRepayment("05 September 2022", 500.0f, loanId);
         Long repaymentTransactionId = postLoansLoanIdTransactionsResponse.getResourceId();
 
-        BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, LocalDate.of(2022, 9, 25));
+        BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, LocalDate.of(2022, 9, 25));
         PostLoansLoanIdTransactionsResponse secondPostLoansLoanIdTransactionsResponse = loanTransactionHelper
                 .makeLoanRepayment("25 September 2022", 250.0f, loanId);
         Long secondRepaymentId = secondPostLoansLoanIdTransactionsResponse.getResourceId();
 
-        BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, LocalDate.of(2022, 9, 28));
+        BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, LocalDate.of(2022, 9, 28));
         loanTransactionHelper.chargebackLoanTransaction(loanExternalIdStr, secondRepaymentId,
                 new PostLoansLoanIdTransactionsTransactionIdRequest().locale("en").transactionAmount(100.0).paymentTypeId(1L));
 
-        BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, LocalDate.of(2022, 9, 30));
+        BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, LocalDate.of(2022, 9, 30));
         loanTransactionHelper.makeLoanRepayment("30 September 2022", 100.0f, loanId);
 
         PostLoansLoanIdTransactionsResponse postLoansLoanIdTransactionsResponse1 = loanTransactionHelper.reverseLoanTransaction(loanId,
@@ -192,7 +190,9 @@ public class UndoRepaymentWithDownPaymentIntegrationTest extends BaseLoanIntegra
         assertNotNull(postLoansLoanIdTransactionsResponse1);
 
         loanDetails = loanTransactionHelper.getLoanDetails(loanId.longValue());
-        assertEquals(500, loanDetails.getSummary().getTotalOutstanding());
+        assertEquals(500.0, Utils.getDoubleValue(loanDetails.getSummary().getTotalOutstanding()));
+        globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
+                new PutGlobalConfigurationsRequest().enabled(false));
     }
 
     private Integer createLoanProductWithPeriodicAccrualAccountingAndAdvancedPaymentAllocationStrategy() {
@@ -203,17 +203,17 @@ public class UndoRepaymentWithDownPaymentIntegrationTest extends BaseLoanIntegra
         List<Integer> principalVariationsForBorrowerCycle = new ArrayList<>();
         List<Integer> numberOfRepaymentVariationsForBorrowerCycle = new ArrayList<>();
         List<Integer> interestRateVariationsForBorrowerCycle = new ArrayList<>();
-        List<ChargeData> charges = new ArrayList<>();
-        List<ChargeToGLAccountMapper> penaltyToIncomeAccountMappings = new ArrayList<>();
-        List<GetLoanFeeToIncomeAccountMappings> feeToIncomeAccountMappings = new ArrayList<>();
+        List<LoanProductChargeData> charges = new ArrayList<>();
+        List<LoanProductChargeToGLAccountMapper> penaltyToIncomeAccountMappings = new ArrayList<>();
+        List<LoanProductChargeToGLAccountMapper> feeToIncomeAccountMappings = new ArrayList<>();
 
         String paymentTypeName = PaymentTypeHelper.randomNameGenerator("P_T", 5);
         String description = PaymentTypeHelper.randomNameGenerator("PT_Desc", 15);
         Boolean isCashPayment = false;
-        Integer position = 1;
+        Long position = 1L;
 
-        PostPaymentTypesResponse paymentTypesResponse = paymentTypeHelper.createPaymentType(new PostPaymentTypesRequest()
-                .name(paymentTypeName).description(description).isCashPayment(isCashPayment).position(position));
+        var paymentTypesResponse = paymentTypeHelper.createPaymentType(new PaymentTypeCreateRequest().name(paymentTypeName)
+                .description(description).isCashPayment(isCashPayment).position(position));
         Long paymentTypeIdOne = paymentTypesResponse.getResourceId();
         Assertions.assertNotNull(paymentTypeIdOne);
 
@@ -231,7 +231,7 @@ public class UndoRepaymentWithDownPaymentIntegrationTest extends BaseLoanIntegra
         Assertions.assertNotNull(fundID);
 
         // Delinquency Bucket
-        final Integer delinquencyBucketId = DelinquencyBucketsHelper.createDelinquencyBucket(requestSpec, responseSpec);
+        final Long delinquencyBucketId = DelinquencyBucketsHelper.createDefaultBucket();
 
         String futureInstallmentAllocationRule = "NEXT_INSTALLMENT";
         AdvancedPaymentData defaultAllocation = createDefaultPaymentAllocation(futureInstallmentAllocationRule);
@@ -293,7 +293,7 @@ public class UndoRepaymentWithDownPaymentIntegrationTest extends BaseLoanIntegra
                         .repaymentEvery(true)//
                         .graceOnPrincipalAndInterestPayment(true)//
                         .graceOnArrearsAgeing(true))//
-                .allowPartialPeriodInterestCalcualtion(true)//
+                .allowPartialPeriodInterestCalculation(true)//
                 .maxTrancheCount(10)//
                 .outstandingLoanBalance(10000.0)//
                 .charges(charges)//

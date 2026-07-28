@@ -32,7 +32,22 @@ public enum TransactionType {
     ACCRUAL("accrual"), //
     CHARGE_OFF("chargeOff"), //
     CHARGE_ADJUSTMENT("chargeAdjustment"), //
-    INTEREST_PAYMENT_WAIVER("interestPaymentWaiver");//
+    INTEREST_PAYMENT_WAIVER("interestPaymentWaiver"), //
+    REPAYMENT_AT_DISBURSEMENT("repaymentAtDisbursement"), //
+    CAPITALIZED_INCOME("capitalizedIncome"), //
+    CAPITALIZED_INCOME_AMORTIZATION("capitalizedIncomeAmortization"), //
+    CAPITALIZED_INCOME_ADJUSTMENT("capitalizedIncomeAdjustment"), //
+    CAPITALIZED_INCOME_AMORTIZATION_ADJUSTMENT("capitalizedIncomeAmortizationAdjustment"), //
+    BUY_DOWN_FEE("buyDownFee"), //
+    BUY_DOWN_FEE_ADJUSTMENT("buyDownFeeAdjustment"), //
+    BUY_DOWN_FEE_AMORTIZATION("buyDownFeeAmortization"), //
+    INTEREST_REFUND("interestRefund"), //
+    WRITE_OFF("writeOff"), //
+    DISCOUNT_FEE("discountFee"), //
+    DISCOUNT_FEE_ADJUSTMENT("discountFeeAdjustment"), //
+    DISCOUNT_FEE_AMORTIZATION("discountFeeAmortization"), //
+    DISCOUNT_FEE_AMORTIZATION_ADJUSTMENT("discountFeeAmortizationAdjustment"), //
+    ;
 
     public final String value;
 

@@ -25,18 +25,23 @@ public class LoanChargeWaiveCannotBeReversedException extends AbstractPlatformDo
     /*** enum of reasons of why Loan Charge waive cannot undo **/
     public enum LoanChargeWaiveCannotUndoReason {
 
-        ALREADY_PAID, ALREADY_WAIVED, LOAN_INACTIVE, WAIVE_NOT_ALLOWED_FOR_CHARGE, NOT_WAIVED, ALREADY_REVERSED;
+        ALREADY_PAID, //
+        ALREADY_WAIVED, //
+        LOAN_INACTIVE, //
+        WAIVE_NOT_ALLOWED_FOR_CHARGE, //
+        NOT_WAIVED, //
+        ALREADY_REVERSED; //
 
         public String errorMessage() {
 
             if (name().equalsIgnoreCase("ALREADY_PAID")) {
-                return "This loan charge has been completely paid";
+                return "This loan charge waive cannot be reversed as the charge has already been paid";
             } else if (name().equalsIgnoreCase("ALREADY_WAIVED")) {
                 return "This loan charge has already been waived";
             } else if (name().equalsIgnoreCase("LOAN_INACTIVE")) {
-                return "This loan charge can be waived as the loan associated with it is currently inactive";
+                return "This loan charge waive cannot be reversed as the loan associated with it is currently inactive";
             } else if (name().equalsIgnoreCase("WAIVE_NOT_ALLOWED_FOR_CHARGE")) {
-                return "This loan charge can be waived";
+                return "This loan charge waive cannot be reversed";
             } else if (name().equalsIgnoreCase("NOT_WAIVED")) {
                 return "This loan charge waive cannot be reversed as this charge is not waived";
             } else if (name().equalsIgnoreCase("ALREADY_REVERSED")) {

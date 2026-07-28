@@ -18,11 +18,17 @@
  */
 package org.apache.fineract.accounting.glaccount.service;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import org.apache.fineract.accounting.glaccount.data.GLAccountData;
 import org.apache.fineract.accounting.glaccount.data.GLAccountDataForLookup;
 import org.apache.fineract.accounting.glaccount.domain.GLAccountType;
 import org.apache.fineract.accounting.journalentry.data.JournalEntryAssociationParametersData;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 
 public interface GLAccountReadPlatformService {
 
@@ -40,4 +46,39 @@ public interface GLAccountReadPlatformService {
     GLAccountData retrieveNewGLAccountDetails(Integer type);
 
     List<GLAccountDataForLookup> retrieveAccountsByTagId(Long ruleId, Integer transactionType);
+
+    /**
+     * Retrieve GL Account balance from materialized balance table
+     *
+     * The balance is retrieved from acc_gl_account_balance table which is
+     * automatically maintained by database trigger for performance.
+     *
+     * @param glAccountId the GL account ID
+     * @return Map containing balance, totalDebits, and totalCredits
+     */
+    Map<String, BigDecimal> retrieveGLAccountBalance(long glAccountId);
+
+    /**
+     * Retrieve GL Account balances for multiple accounts from materialized balance table
+     *
+     * The balances are retrieved from acc_gl_account_balance table which is
+     * automatically maintained by database trigger for performance.
+     *
+     * @param glAccountIds list of GL account IDs
+     * @return List of Maps, each containing glAccountId, balance, totalDebits, and totalCredits.
+     *         Returns null for accounts that don't exist instead of throwing an error.
+     */
+    List<Map<String, BigDecimal>> retrieveGLAccountBalances(List<Long> glAccountIds);
+
+    /**
+     * Retrieve aggregated/total balances for all GL accounts matching a GL code pattern
+     *
+     * The balances are retrieved from acc_gl_account_balance table which is
+     * automatically maintained by database trigger for performance.
+     * Returns a single total/summary of all matching accounts.
+     *
+     * @param glCodePattern the GL code pattern (e.g., "2700-CL-" to match accounts like 2700-CL-0000001)
+     * @return Map containing totalBalance, totalDebits, totalCredits, and accountCount
+     */
+    Map<String, Object> retrieveGLAccountBalancesTotalByCodePattern(String glCodePattern);
 }

@@ -30,7 +30,7 @@ import io.restassured.specification.ResponseSpecification;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.UUID;
-import org.apache.fineract.client.models.GetDelinquencyBucketsResponse;
+import org.apache.fineract.client.models.DelinquencyBucketResponse;
 import org.apache.fineract.client.models.GetLoanProductsProductIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdResponse;
 import org.apache.fineract.client.models.GetLoansLoanIdSummary;
@@ -76,7 +76,7 @@ public class LoanAccountArrearsAgeingCOBBusinessStepTest extends BaseLoanIntegra
                     new PutGlobalConfigurationsRequest().enabled(true));
 
             LocalDate businessDate = Utils.getLocalDateOfTenant();
-            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, businessDate);
+            BusinessDateHelper.updateBusinessDate(BusinessDateType.BUSINESS_DATE, businessDate);
 
             LocalDate operationDate = businessDate.minusDays(40);
             String loanOperationDate = Utils.dateFormatter.format(operationDate);
@@ -87,9 +87,8 @@ public class LoanAccountArrearsAgeingCOBBusinessStepTest extends BaseLoanIntegra
             // create Loan Product
 
             // Delinquency Bucket
-            final Integer delinquencyBucketId = DelinquencyBucketsHelper.createDelinquencyBucket(requestSpec, responseSpec);
-            final GetDelinquencyBucketsResponse delinquencyBucket = DelinquencyBucketsHelper.getDelinquencyBucket(requestSpec, responseSpec,
-                    delinquencyBucketId);
+            final Long delinquencyBucketId = DelinquencyBucketsHelper.createDefaultBucket();
+            final DelinquencyBucketResponse delinquencyBucket = DelinquencyBucketsHelper.getBucket(delinquencyBucketId);
 
             final GetLoanProductsProductIdResponse getLoanProductsProductResponse = createLoanProduct(loanTransactionHelper,
                     delinquencyBucketId);
@@ -129,16 +128,16 @@ public class LoanAccountArrearsAgeingCOBBusinessStepTest extends BaseLoanIntegra
             GetLoansLoanIdSummary loan1Summary = loan1Details.getSummary();
             assertNotNull(loan1Summary);
             assertNotNull(loan1Summary.getOverdueSinceDate());
-            assertEquals(loan1Summary.getPrincipalOverdue(), 1000.00);
-            assertEquals(loan1Summary.getTotalOverdue(), 1000.00);
+            assertEquals(1000.00, Utils.getDoubleValue(loan1Summary.getPrincipalOverdue()));
+            assertEquals(1000.00, Utils.getDoubleValue(loan1Summary.getTotalOverdue()));
 
             // Retrieve Loan 2 with loanId
             GetLoansLoanIdResponse loan2Details = loanTransactionHelper.getLoanDetails((long) loanId_2);
             GetLoansLoanIdSummary loan2Summary = loan2Details.getSummary();
             assertNotNull(loan2Summary);
             assertNotNull(loan2Summary.getOverdueSinceDate());
-            assertEquals(loan2Summary.getPrincipalOverdue(), 1000.00);
-            assertEquals(loan2Summary.getTotalOverdue(), 1000.00);
+            assertEquals(1000.00, Utils.getDoubleValue(loan2Summary.getPrincipalOverdue()));
+            assertEquals(1000.00, Utils.getDoubleValue(loan2Summary.getTotalOverdue()));
         } finally {
             globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
                     new PutGlobalConfigurationsRequest().enabled(false));
@@ -146,7 +145,7 @@ public class LoanAccountArrearsAgeingCOBBusinessStepTest extends BaseLoanIntegra
     }
 
     private GetLoanProductsProductIdResponse createLoanProduct(final LoanTransactionHelper loanTransactionHelper,
-            final Integer delinquencyBucketId) {
+            final Long delinquencyBucketId) {
         final HashMap<String, Object> loanProductMap = new LoanProductTestBuilder().build(null, delinquencyBucketId);
         final Integer loanProductId = loanTransactionHelper.getLoanProductId(Utils.convertToJson(loanProductMap));
         return loanTransactionHelper.getLoanProduct(loanProductId);

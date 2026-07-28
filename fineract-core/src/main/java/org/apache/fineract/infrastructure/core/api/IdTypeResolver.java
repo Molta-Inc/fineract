@@ -53,7 +53,7 @@ public abstract class IdTypeResolver {
 
     public static <T extends Enum<T>> T resolve(@NotNull Class<T> clazz, String idType) {
         if (idType == null) {
-            return clazz.isAssignableFrom(DefaultOption.class) ? (T) DefaultOption.getDefault((Class) clazz) : null;
+            return defaultOption(clazz);
         }
         idType = formatIdType(idType);
         try {
@@ -64,11 +64,24 @@ public abstract class IdTypeResolver {
     }
 
     public static String formatIdType(String idType) {
-        return idType == null ? null : idType.replaceAll("-", "_").toUpperCase();
+        return idType == null ? null : idType.replace("-", "_").toUpperCase();
     }
 
     public static RuntimeException resolveFailed(String idType, Exception e) {
         return new PlatformApiDataValidationException("error.msg.id.type.not.found", "Provided type " + idType + " is not supported",
                 "idType", e, idType);
+    }
+
+    private static <T extends Enum<T>> T defaultOption(Class<T> clazz) {
+        if (!DefaultOption.class.isAssignableFrom(clazz)) {
+            return null;
+        }
+        for (T enumConstant : clazz.getEnumConstants()) {
+            DefaultOption defaultOption = (DefaultOption) enumConstant;
+            if (defaultOption.isDefault()) {
+                return enumConstant;
+            }
+        }
+        return null;
     }
 }

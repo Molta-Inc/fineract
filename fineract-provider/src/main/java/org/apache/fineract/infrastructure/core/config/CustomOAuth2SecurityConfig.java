@@ -23,14 +23,15 @@ import com.auth0.jwt.JWT;
 import org.apache.fineract.infrastructure.businessdate.service.BusinessDateReadPlatformService;
 import org.apache.fineract.infrastructure.cache.service.CacheWritePlatformService;
 import org.apache.fineract.infrastructure.configuration.domain.ConfigurationDomainService;
-import org.apache.fineract.infrastructure.core.exceptionmapper.OAuth2ExceptionEntryPoint;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.apache.fineract.infrastructure.core.serialization.ToApiJsonSerializer;
 import org.apache.fineract.infrastructure.security.data.FineractJwtAuthenticationToken;
 import org.apache.fineract.infrastructure.security.data.PlatformRequestLog;
-import org.apache.fineract.infrastructure.security.filter.InsecureTwoFactorAuthenticationFilter;
-import org.apache.fineract.infrastructure.security.filter.TenantAwareTenantIdentifierFilter;
+
+import org.apache.fineract.infrastructure.security.filter.BusinessDateFilter;
+import org.apache.fineract.infrastructure.security.filter.MoltaTenantFilter;
 import org.apache.fineract.infrastructure.security.filter.TwoFactorAuthenticationFilter;
-import org.apache.fineract.infrastructure.security.service.BasicAuthTenantDetailsService;
+import org.apache.fineract.infrastructure.security.service.AuthTenantDetailsService;
 import org.apache.fineract.infrastructure.security.service.TenantAwareJpaPlatformUserDetailsService;
 import org.apache.fineract.infrastructure.security.service.TwoFactorService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,10 +69,14 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.security.interfaces.RSAPublicKey;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.web.authentication.AuthenticationFilter;
 
-import static org.apache.fineract.infrastructure.security.vote.SelfServiceUserAuthorizationManager.selfServiceUserAuthManager;
+import org.springframework.security.config.Customizer;
+
 import static org.springframework.security.authorization.AuthenticatedAuthorizationManager.fullyAuthenticated;
 import static org.springframework.security.authorization.AuthorityAuthorizationManager.hasAuthority;
 import static org.springframework.security.authorization.AuthorizationManagers.allOf;
@@ -92,7 +97,7 @@ public class CustomOAuth2SecurityConfig {
     private FineractProperties fineractProperties;
 
     @Autowired
-    private BasicAuthTenantDetailsService basicAuthTenantDetailsService;
+    private AuthTenantDetailsService basicAuthTenantDetailsService;
 
     @Autowired
     private ToApiJsonSerializer<PlatformRequestLog> toApiJsonSerializer;
@@ -105,6 +110,7 @@ public class CustomOAuth2SecurityConfig {
 
     @Autowired
     private BusinessDateReadPlatformService businessDateReadPlatformService;
+
     @Autowired
     private ApplicationContext applicationContext;
 
@@ -124,18 +130,30 @@ public class CustomOAuth2SecurityConfig {
                             .requestMatchers(antMatcher(HttpMethod.POST, "/api/*/twofactor/validate")).fullyAuthenticated() //
                             .requestMatchers(antMatcher("/api/*/twofactor")).fullyAuthenticated() //
                             .requestMatchers(antMatcher("/api/**"))
-                            .access(allOf(fullyAuthenticated(), hasAuthority("TWOFACTOR_AUTHENTICATED"), selfServiceUserAuthManager())); //
+                            .access(allOf(fullyAuthenticated(), hasAuthority("TWOFACTOR_AUTHENTICATED"))); //
                 }).csrf((csrf) -> csrf.disable()) // NOSONAR only creating a service that is used by non-browser clients
-                .exceptionHandling((ehc) -> ehc.authenticationEntryPoint(new OAuth2ExceptionEntryPoint()))
+                .exceptionHandling((ehc) -> ehc.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint()))
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(authenticationConverter()))
-                        .authenticationEntryPoint(new OAuth2ExceptionEntryPoint())) //
+                        .authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint())) //
                 .sessionManagement((smc) -> smc.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) //
-                .addFilterAfter(tenantAwareTenantIdentifierFilter(), SecurityContextHolderFilter.class);
+                .cors(Customizer.withDefaults()) //
+                .addFilterAfter(tenantAwareTenantIdentifierFilter(), SecurityContextHolderFilter.class)
+                .addFilterAfter(businessDateFilter(), MoltaTenantFilter.class);
 
         if (fineractProperties.getSecurity().getTwoFactor().isEnabled()) {
             http.addFilterAfter(twoFactorAuthenticationFilter(), BasicAuthenticationFilter.class);
         } else {
-            http.addFilterAfter(insecureTwoFactorAuthenticationFilter(), BasicAuthenticationFilter.class);
+            http.addFilterAfter((request, response, chain) -> {
+                var ctx = org.springframework.security.core.context.SecurityContextHolder.getContext();
+                var auth = ctx == null ? null : ctx.getAuthentication();
+                if (auth != null && auth.isAuthenticated()) {
+                    List<org.springframework.security.core.GrantedAuthority> updated = new ArrayList<>(auth.getAuthorities());
+                    updated.add(new SimpleGrantedAuthority("TWOFACTOR_AUTHENTICATED"));
+                    ctx.setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                            auth.getPrincipal(), auth.getCredentials(), updated));
+                }
+                chain.doFilter(request, response);
+            }, BasicAuthenticationFilter.class);
         }
 
         if (serverProperties.getSsl().isEnabled()) {
@@ -145,9 +163,12 @@ public class CustomOAuth2SecurityConfig {
         return http.build();
     }
 
-    public TenantAwareTenantIdentifierFilter tenantAwareTenantIdentifierFilter() {
-        return new TenantAwareTenantIdentifierFilter(basicAuthTenantDetailsService, toApiJsonSerializer, configurationDomainService,
-                cacheWritePlatformService, businessDateReadPlatformService);
+    public MoltaTenantFilter tenantAwareTenantIdentifierFilter() {
+        return new MoltaTenantFilter(new org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver(), basicAuthTenantDetailsService);
+    }
+
+    public BusinessDateFilter businessDateFilter() {
+        return new BusinessDateFilter(businessDateReadPlatformService);
     }
 
     public TwoFactorAuthenticationFilter twoFactorAuthenticationFilter() {
@@ -155,9 +176,7 @@ public class CustomOAuth2SecurityConfig {
         return new TwoFactorAuthenticationFilter(twoFactorService);
     }
 
-    public InsecureTwoFactorAuthenticationFilter insecureTwoFactorAuthenticationFilter() {
-        return new InsecureTwoFactorAuthenticationFilter();
-    }
+
 
     @Bean
     public BasicAuthenticationEntryPoint basicAuthenticationEntryPoint() {

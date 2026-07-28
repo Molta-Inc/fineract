@@ -19,7 +19,6 @@
 package org.apache.fineract.infrastructure.core.auditing;
 
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableWithUTCDateTimeCustom;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.data.auditing.AuditableBeanWrapper;
 import org.springframework.data.auditing.AuditingHandler;
 import org.springframework.data.auditing.DateTimeProvider;
@@ -28,6 +27,7 @@ import org.springframework.data.mapping.PersistentEntity;
 import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.mapping.context.MappingContext;
 import org.springframework.data.mapping.context.PersistentEntities;
+import org.springframework.lang.NonNull;
 import org.springframework.util.Assert;
 
 public class CustomAuditingHandler extends AuditingHandler {
@@ -51,8 +51,9 @@ public class CustomAuditingHandler extends AuditingHandler {
      * @param mappingContext
      *            must not be {@literal null}.
      * @since 1.8
-     * @deprecated use {@link AuditingHandler(PersistentEntities)} instead.
+     * @deprecated use AuditingHandler with PersistentEntities instead.
      */
+    @Deprecated
     public CustomAuditingHandler(MappingContext<? extends PersistentEntity<?, ?>, ? extends PersistentProperty<?>> mappingContext,
             AuditorAware<?> auditorAware) {
         this(PersistentEntities.of(mappingContext));
@@ -73,9 +74,8 @@ public class CustomAuditingHandler extends AuditingHandler {
      * @param source
      *            must not be {@literal null}.
      */
-    @NotNull
     @Override
-    public <T> T markCreated(@NotNull T source) {
+    public <T> T markCreated(@NonNull T source) {
         Assert.notNull(source, "Source entity must not be null");
         setDateTimeProvider(fetchDateTimeProvider(source));
         return super.markCreated(source);
@@ -87,9 +87,8 @@ public class CustomAuditingHandler extends AuditingHandler {
      * @param source
      *            must not be {@literal null}.
      */
-    @NotNull
     @Override
-    public <T> T markModified(@NotNull T source) {
+    public <T> T markModified(@NonNull T source) {
         Assert.notNull(source, "Source entity must not be null");
         setDateTimeProvider(fetchDateTimeProvider(source));
         return super.markModified(source);

@@ -13,6 +13,14 @@
         },
         {
             "default": null,
+            "name": "availableDisbursementAmountWithOverApplied",
+            "type": [
+                "null",
+                "bigdecimal"
+            ]
+        },
+        {
+            "default": null,
             "name": "pastDueDays",
             "type": [
                 "null",
@@ -21,10 +29,26 @@
         },
         {
             "default": null,
+            "name": "pastDueDate",
+            "type": [
+                "null",
+                "string"
+            ]
+        },
+        {
+            "default": null,
             "name": "nextPaymentDueDate",
             "type": [
                 "null",
                 "string"
+            ]
+        },
+        {
+            "default": null,
+            "name": "nextPaymentAmount",
+            "type": [
+                "null",
+                "bigdecimal"
             ]
         },
         {

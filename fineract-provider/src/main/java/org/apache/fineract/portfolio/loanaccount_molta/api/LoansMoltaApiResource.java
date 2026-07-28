@@ -25,22 +25,29 @@ import jakarta.ws.rs.core.UriInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
+import org.apache.fineract.infrastructure.core.api.DateParam;
+import org.apache.fineract.infrastructure.core.data.DateFormat;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
+import org.apache.fineract.infrastructure.core.service.DateUtils;
 import org.apache.fineract.infrastructure.core.service.Page;
 import org.apache.fineract.infrastructure.core.service.SearchParameters;
 import org.apache.fineract.infrastructure.security.service.PlatformSecurityContext;
 import org.apache.fineract.infrastructure.security.service.SqlValidator;
 import org.apache.fineract.portfolio.loanaccount.api.LoanApiConstants;
 import org.apache.fineract.portfolio.loanaccount.data.LoanAccountData;
+import org.apache.fineract.portfolio.loanaccount.data.LoanTransactionData;
 import org.apache.fineract.portfolio.loanaccount_molta.service.LoanMoltaReadPlatformService;
+import org.apache.fineract.portfolio.loanaccount_molta.service.MoltaForeclosureService;
 import org.apache.fineract.portfolio.loanproduct.LoanProductConstants;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 @Slf4j
@@ -72,9 +79,14 @@ public class LoansMoltaApiResource {
 
     private static final String RESOURCE_NAME_FOR_PERMISSIONS = "LOAN";
 
+    private static final int FORECLOSURE_DEFAULT_DAYS_AHEAD = 30;
+
     private final PlatformSecurityContext context;
     private final LoanMoltaReadPlatformService loanMoltaReadPlatformService;
+    private final MoltaForeclosureService moltaForeclosureService;
     private final DefaultToApiJsonSerializer<LoanAccountData> toApiJsonSerializer;
+    private final DefaultToApiJsonSerializer<LoanTransactionData> loanTransactionSerializer;
+    private final DefaultToApiJsonSerializer<Map> changesSerializer;
     private final ApiRequestParameterHelper apiRequestParameterHelper;
     private final SqlValidator sqlValidator;
 
@@ -114,6 +126,54 @@ public class LoansMoltaApiResource {
         return this.toApiJsonSerializer.serialize(settings, loanBasicDetails, LOAN_DATA_PARAMETERS);
     }
 
+    @GET
+    @Path("{loanId}/transactions/template")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    public String retrieveForeclosureTemplate(@PathParam("loanId") final Long loanId,
+            @QueryParam("command") final String commandParam,
+            @QueryParam("transactionDate") final DateParam transactionDateParam,
+            @QueryParam("dateFormat") final String rawDateFormat,
+            @QueryParam("locale") final String locale,
+            @Context final UriInfo uriInfo) {
+
+        this.context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
+
+        if (!"foreclosure".equalsIgnoreCase(commandParam)) {
+            throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.Status.BAD_REQUEST);
+        }
+
+        LocalDate transactionDate;
+        if (transactionDateParam == null) {
+            transactionDate = DateUtils.getBusinessLocalDate().plusDays(FORECLOSURE_DEFAULT_DAYS_AHEAD);
+        } else {
+            final DateFormat dateFormat = rawDateFormat == null ? null : new DateFormat(rawDateFormat);
+            transactionDate = transactionDateParam.getDate("transactionDate", dateFormat, locale);
+        }
+
+        final LoanTransactionData transactionData = moltaForeclosureService.retrieveForeclosureTemplate(loanId, transactionDate);
+        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+        return this.loanTransactionSerializer.serialize(settings, transactionData);
+    }
+
+    @POST
+    @Path("{loanId}/transactions")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Produces({ MediaType.APPLICATION_JSON })
+    public String performForeclosure(@PathParam("loanId") final Long loanId,
+            @QueryParam("command") final String commandParam,
+            final String body) {
+
+        this.context.authenticatedUser();
+
+        if (!"foreclosure".equalsIgnoreCase(commandParam)) {
+            throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.Status.BAD_REQUEST);
+        }
+
+        final Map<String, Object> changes = moltaForeclosureService.performForeclosure(loanId, body);
+        return this.changesSerializer.serialize(changes);
+    }
+
     private boolean hasPermission(AppUser appUser) {
         final String ALL_FUNCTIONS = "ALL_FUNCTIONS";
         final String ALL_FUNCTIONS_READ = "ALL_FUNCTIONS_READ";
@@ -134,5 +194,4 @@ public class LoansMoltaApiResource {
 
         return false;
     }
-
 }

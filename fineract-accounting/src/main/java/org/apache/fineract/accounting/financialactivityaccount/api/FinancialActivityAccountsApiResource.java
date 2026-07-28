@@ -40,10 +40,12 @@ import jakarta.ws.rs.core.UriInfo;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.apache.fineract.accounting.financialactivityaccount.data.FinancialActivityAccountData;
+import org.apache.fineract.accounting.financialactivityaccount.data.request.FinancialActivityAccRequest;
 import org.apache.fineract.accounting.financialactivityaccount.service.FinancialActivityAccountReadPlatformService;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.CommandWrapperBuilder;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
+import org.apache.fineract.infrastructure.core.annotation.AlternativeOperationId;
 import org.apache.fineract.infrastructure.core.api.ApiRequestParameterHelper;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.serialization.ApiRequestJsonSerializationSettings;
@@ -75,109 +77,83 @@ public class FinancialActivityAccountsApiResource {
 
     @GET
     @Path("template")
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    public String retrieveTemplate(@Context final UriInfo uriInfo) {
-
-        this.context.authenticatedUser().validateHasReadPermission(FinancialActivityAccountsConstants.resourceNameForPermission);
-
-        FinancialActivityAccountData financialActivityAccountData = this.financialActivityAccountReadPlatformService
-                .getFinancialActivityAccountTemplate();
-
-        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        return this.apiJsonSerializerService.serialize(settings, financialActivityAccountData,
-                FinancialActivityAccountsConstants.RESPONSE_DATA_PARAMETERS);
+    public FinancialActivityAccountData retrieveTemplate() {
+        context.authenticatedUser().validateHasReadPermission(FinancialActivityAccountsConstants.RESOURCE_NAME_FOR_PERMISSION);
+        return financialActivityAccountReadPlatformService.getFinancialActivityAccountTemplate();
     }
 
     @GET
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "List Financial Activities to Accounts Mappings", description = """
             Example Requests:
             financialactivityaccounts""")
     @ApiResponse(responseCode = "200", description = "OK", content = @Content(array = @ArraySchema(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.GetFinancialActivityAccountsResponse.class))))
-    public String retrieveAll(@Context final UriInfo uriInfo) {
-
-        this.context.authenticatedUser().validateHasReadPermission(FinancialActivityAccountsConstants.resourceNameForPermission);
-        final List<FinancialActivityAccountData> financialActivityAccounts = this.financialActivityAccountReadPlatformService.retrieveAll();
-
-        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        return this.apiJsonSerializerService.serialize(settings, financialActivityAccounts,
-                FinancialActivityAccountsConstants.RESPONSE_DATA_PARAMETERS);
+    public List<FinancialActivityAccountData> retrieveAll() {
+        context.authenticatedUser().validateHasReadPermission(FinancialActivityAccountsConstants.RESOURCE_NAME_FOR_PERMISSION);
+        return financialActivityAccountReadPlatformService.retrieveAll();
     }
 
     @GET
     @Path("{mappingId}")
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
     @Operation(summary = "Retrieve a Financial Activity to Account Mapping\n", description = """
             Example Requests:
             financialactivityaccounts/1""")
     @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.GetFinancialActivityAccountsResponse.class)))
-    public String retreive(@PathParam("mappingId") @Parameter(description = "mappingId") final Long mappingId,
+    public FinancialActivityAccountData retreive(@PathParam("mappingId") @Parameter(description = "mappingId") final Long mappingId,
             @Context final UriInfo uriInfo) {
+        context.authenticatedUser().validateHasReadPermission(FinancialActivityAccountsConstants.RESOURCE_NAME_FOR_PERMISSION);
 
-        this.context.authenticatedUser().validateHasReadPermission(FinancialActivityAccountsConstants.resourceNameForPermission);
-
-        final ApiRequestJsonSerializationSettings settings = this.apiRequestParameterHelper.process(uriInfo.getQueryParameters());
-        FinancialActivityAccountData financialActivityAccountData = this.financialActivityAccountReadPlatformService.retrieve(mappingId);
+        final ApiRequestJsonSerializationSettings settings = apiRequestParameterHelper.process(uriInfo.getQueryParameters());
+        FinancialActivityAccountData financialActivityAccountData = financialActivityAccountReadPlatformService.retrieve(mappingId);
         if (settings.isTemplate()) {
-            financialActivityAccountData = this.financialActivityAccountReadPlatformService
-                    .addTemplateDetails(financialActivityAccountData);
+            financialActivityAccountData = financialActivityAccountReadPlatformService.addTemplateDetails(financialActivityAccountData);
         }
 
-        return this.apiJsonSerializerService.serialize(settings, financialActivityAccountData,
-                FinancialActivityAccountsConstants.RESPONSE_DATA_PARAMETERS);
+        return financialActivityAccountData;
     }
 
     @POST
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Create a new Financial Activity to Accounts Mapping", description = """
+    @Operation(summary = "Create a new Financial Activity to Accounts Mapping", operationId = "createGLAccountMappingFinancialActivityAccount", description = """
             Mandatory Fields
             financialActivityId, glAccountId""")
+    @AlternativeOperationId("createGLAccount")
     @RequestBody(content = @Content(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.PostFinancialActivityAccountsRequest.class)))
     @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.PostFinancialActivityAccountsResponse.class)))
-    public String createGLAccount(@Parameter(hidden = true) final String jsonRequestBody) {
+    public CommandProcessingResult createGLAccount(@Parameter(hidden = true) FinancialActivityAccRequest activityAccRequest) {
+        final CommandWrapper commandRequest = new CommandWrapperBuilder().createOfficeToGLAccountMapping()
+                .withJson(apiJsonSerializerService.serialize(activityAccRequest)).build();
 
-        final CommandWrapper commandRequest = new CommandWrapperBuilder().createOfficeToGLAccountMapping().withJson(jsonRequestBody)
-                .build();
-
-        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
-
-        return this.apiJsonSerializerService.serialize(result);
+        return commandsSourceWritePlatformService.logCommandSource(commandRequest);
     }
 
     @PUT
     @Path("{mappingId}")
     @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Update a Financial Activity to Account Mapping", description = "the API updates the Ledger account linked to a Financial Activity")
+    @Operation(summary = "Update a Financial Activity to Account Mapping", operationId = "updateGLAccountMappingFinancialActivityAccount", description = "the API updates the Ledger account linked to a Financial Activity")
+    @AlternativeOperationId("updateGLAccount")
     @RequestBody(content = @Content(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.PostFinancialActivityAccountsRequest.class)))
     @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.PutFinancialActivityAccountsResponse.class)))
-    public String updateGLAccount(@PathParam("mappingId") @Parameter(description = "mappingId") final Long mappingId,
-            @Parameter(hidden = true) final String jsonRequestBody) {
-
+    public CommandProcessingResult updateGLAccount(@PathParam("mappingId") @Parameter(description = "mappingId") final Long mappingId,
+            @Parameter(hidden = true) FinancialActivityAccRequest activityAccRequest) {
         final CommandWrapper commandRequest = new CommandWrapperBuilder().updateOfficeToGLAccountMapping(mappingId)
-                .withJson(jsonRequestBody).build();
+                .withJson(apiJsonSerializerService.serialize(activityAccRequest)).build();
 
-        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
-
-        return this.apiJsonSerializerService.serialize(result);
+        return commandsSourceWritePlatformService.logCommandSource(commandRequest);
     }
 
     @DELETE
     @Path("{mappingId}")
-    @Consumes({ MediaType.APPLICATION_JSON })
     @Produces({ MediaType.APPLICATION_JSON })
-    @Operation(summary = "Delete a Financial Activity to Account Mapping")
+    @Operation(summary = "Delete a Financial Activity to Account Mapping", operationId = "deleteGLAccountMappingFinancialActivityAccount")
+    @AlternativeOperationId("deleteGLAccount")
     @ApiResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = FinancialActivityAccountsApiResourceSwagger.DeleteFinancialActivityAccountsResponse.class)))
-    public String deleteGLAccount(@PathParam("mappingId") @Parameter(description = "mappingId") final Long mappingId) {
-
+    public CommandProcessingResult deleteGLAccount(@PathParam("mappingId") @Parameter(description = "mappingId") final Long mappingId) {
         final CommandWrapper commandRequest = new CommandWrapperBuilder().deleteOfficeToGLAccountMapping(mappingId).build();
-
-        final CommandProcessingResult result = this.commandsSourceWritePlatformService.logCommandSource(commandRequest);
-
-        return this.apiJsonSerializerService.serialize(result);
+        return commandsSourceWritePlatformService.logCommandSource(commandRequest);
     }
 }

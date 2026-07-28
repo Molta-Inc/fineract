@@ -19,6 +19,7 @@
 package org.apache.fineract.portfolio.loanaccount.service;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
@@ -29,27 +30,28 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import java.util.ArrayList;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import org.apache.fineract.portfolio.loanaccount.domain.Loan;
 import org.apache.fineract.portfolio.loanaccount.domain.LoanTransaction;
+import org.apache.fineract.portfolio.loanaccount.domain.LoanTransactionType;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @Transactional(readOnly = true)
-@RequiredArgsConstructor
 public class LoanTransactionReadService {
 
-    private final EntityManager entityManager;
+    @PersistenceContext
+    private EntityManager entityManager;
 
-    public List<LoanTransaction> fetchLoanTransactionsByType(final Long loanId, final String externalId, final Integer transactionType) {
-        final List<Integer> transactionTypes = new ArrayList<>();
+    public List<LoanTransaction> fetchLoanTransactionsByType(final Long loanId, final String externalId,
+            final LoanTransactionType transactionType) {
+        final List<LoanTransactionType> transactionTypes = new ArrayList<>();
         transactionTypes.add(transactionType);
         return fetchLoanTransactionsByTypes(loanId, externalId, transactionTypes);
     }
 
     public List<LoanTransaction> fetchLoanTransactionsByTypes(final Long loanId, final String externalId,
-            final List<Integer> transactionTypes) {
+            final List<LoanTransactionType> transactionTypes) {
 
         final CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         final CriteriaQuery<LoanTransaction> query = cb.createQuery(LoanTransaction.class);

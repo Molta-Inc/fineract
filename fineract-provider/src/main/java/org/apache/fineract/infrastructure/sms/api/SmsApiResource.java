@@ -21,6 +21,7 @@ package org.apache.fineract.infrastructure.sms.api;
 import static org.apache.fineract.infrastructure.core.api.DateParam.FROM_DATE_PARAM;
 import static org.apache.fineract.infrastructure.core.api.DateParam.TO_DATE_PARAM;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.BeanParam;
 import jakarta.ws.rs.Consumes;
@@ -39,6 +40,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.fineract.commands.domain.CommandWrapper;
 import org.apache.fineract.commands.service.CommandWrapperBuilder;
 import org.apache.fineract.commands.service.PortfolioCommandSourceWritePlatformService;
+import org.apache.fineract.infrastructure.core.annotation.AlternativeOperationId;
 import org.apache.fineract.infrastructure.core.data.CommandProcessingResult;
 import org.apache.fineract.infrastructure.core.data.DateFormat;
 import org.apache.fineract.infrastructure.core.serialization.DefaultToApiJsonSerializer;
@@ -53,7 +55,6 @@ import org.apache.fineract.infrastructure.sms.service.SmsReadPlatformService;
 import org.springframework.stereotype.Component;
 
 @Path("/v1/sms")
-@Consumes({ MediaType.APPLICATION_JSON })
 @Produces({ MediaType.APPLICATION_JSON })
 @Component
 @Tag(name = "SMS", description = "")
@@ -68,12 +69,17 @@ public class SmsApiResource {
     private final DefaultToApiJsonSerializer<String> apiJsonSerializer;
 
     @GET
+    @Operation(summary = "List all SMS messages", operationId = "retrieveAllSms")
+    @AlternativeOperationId("retrieveAll_10")
     public List<SmsData> retrieveAll() {
         context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
         return readPlatformService.retrieveAll();
     }
 
     @POST
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Create a SMS message", operationId = "createSms")
+    @AlternativeOperationId("create_2")
     public CommandProcessingResult create(final SmsCreationRequest smsCreationRequest) {
         final CommandWrapper commandRequest = new CommandWrapperBuilder().createSms()
                 .withJson(apiJsonSerializer.serialize(smsCreationRequest)).build();
@@ -82,29 +88,37 @@ public class SmsApiResource {
 
     @GET
     @Path("{resourceId}")
+    @Operation(summary = "Retrieve a SMS message", operationId = "retrieveOneSms")
+    @AlternativeOperationId("retrieveOne_6")
     public SmsData retrieveOne(@PathParam("resourceId") final Long resourceId) {
         return readPlatformService.retrieveOne(resourceId);
     }
 
     @GET
     @Path("{campaignId}/messageByStatus")
+    @Operation(summary = "Retrieve SMS messages by status", operationId = "retrieveAllSmsByStatus")
     public Page<SmsData> retrieveAllSmsByStatus(@PathParam("campaignId") final Long campaignId,
             @BeanParam SmsRequestParam smsRequestParam) {
         context.authenticatedUser().validateHasReadPermission(RESOURCE_NAME_FOR_PERMISSIONS);
-        final SearchParameters searchParameters = SearchParameters.builder().limit(smsRequestParam.limit()).offset(smsRequestParam.offset())
-                .orderBy(smsRequestParam.orderBy()).sortOrder(smsRequestParam.sortOrder()).build();
+        final SearchParameters searchParameters = SearchParameters.builder().limit(smsRequestParam.getLimit())
+                .offset(smsRequestParam.getOffset()).orderBy(smsRequestParam.getOrderBy()).sortOrder(smsRequestParam.getSortOrder())
+                .build();
 
-        final DateFormat dateFormat = Optional.ofNullable(smsRequestParam.rawDateFormat()).map(DateFormat::new).orElse(null);
-        final LocalDate fromDate = Optional.ofNullable(smsRequestParam.fromDate())
-                .map(fromDateParam -> fromDateParam.getDate(FROM_DATE_PARAM, dateFormat, smsRequestParam.locale())).orElse(null);
-        final LocalDate toDate = Optional.ofNullable(smsRequestParam.toDate())
-                .map(toDateParam -> toDateParam.getDate(TO_DATE_PARAM, dateFormat, smsRequestParam.locale())).orElse(null);
+        final DateFormat dateFormat = Optional.ofNullable(smsRequestParam.getRawDateFormat()).map(DateFormat::new).orElse(null);
+        final LocalDate fromDate = Optional.ofNullable(smsRequestParam.getFromDate())
+                .map(fromDateParam -> fromDateParam.getDate(FROM_DATE_PARAM, dateFormat, smsRequestParam.getLocale())).orElse(null);
+        final LocalDate toDate = Optional.ofNullable(smsRequestParam.getToDate())
+                .map(toDateParam -> toDateParam.getDate(TO_DATE_PARAM, dateFormat, smsRequestParam.getLocale())).orElse(null);
 
-        return readPlatformService.retrieveSmsByStatus(campaignId, searchParameters, smsRequestParam.status().intValue(), fromDate, toDate);
+        return readPlatformService.retrieveSmsByStatus(campaignId, searchParameters, smsRequestParam.getStatus().intValue(), fromDate,
+                toDate);
     }
 
     @PUT
     @Path("{resourceId}")
+    @Consumes({ MediaType.APPLICATION_JSON })
+    @Operation(summary = "Update a SMS message", operationId = "updateSms")
+    @AlternativeOperationId("update_3")
     public CommandProcessingResult update(@PathParam("resourceId") final Long resourceId, final SmsUpdateRequest smsUpdateRequest) {
         final CommandWrapper commandRequest = new CommandWrapperBuilder().updateSms(resourceId)
                 .withJson(apiJsonSerializer.serialize(smsUpdateRequest)).build();
@@ -113,6 +127,8 @@ public class SmsApiResource {
 
     @DELETE
     @Path("{resourceId}")
+    @Operation(summary = "Delete a SMS message", operationId = "deleteSms")
+    @AlternativeOperationId("delete_5")
     public CommandProcessingResult delete(@PathParam("resourceId") final Long resourceId) {
         final CommandWrapper commandRequest = new CommandWrapperBuilder().deleteSms(resourceId).build();
         return commandsSourceWritePlatformService.logCommandSource(commandRequest);
